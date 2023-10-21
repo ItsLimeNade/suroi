@@ -1,5 +1,5 @@
-import { INPUT_ACTIONS_BITS, InputActions, ObjectCategory, PacketType } from "../../../../../common/src/constants";
-import { ObjectType } from "../../../../../common/src/utils/objectType";
+import { INPUT_ACTIONS_BITS, InputActions, PacketType } from "../../../../../common/src/constants";
+import { Loots } from "../../../../../common/src/definitions/loots";
 import { type SuroiBitStream } from "../../../../../common/src/utils/suroiBitStream";
 import { SendingPacket } from "../../types/sendingPacket";
 
@@ -23,8 +23,8 @@ export class InputPacket extends SendingPacket {
 
         stream.writeBoolean(player.attacking);
         if (this.game.playerManager.shootOnRelease) {
-            player.attacking = false
-            this.game.playerManager.shootOnRelease = false
+            player.attacking = false;
+            this.game.playerManager.shootOnRelease = false;
         }
         stream.writeBoolean(player.turning);
         if (player.turning) {
@@ -45,8 +45,9 @@ export class InputPacket extends SendingPacket {
                 break;
             }
             case InputActions.UseConsumableItem: {
-                stream.writeObjectTypeNoCategory(ObjectType.fromString(ObjectCategory.Loot, player.consumableToConsume));
-                player.consumableToConsume = "";
+                stream.writeUint8(Loots.idStringToNumber[player.consumableToConsume?.idString ?? ""]);
+                //                    we're in big trouble if the nullish coalescing triggers ^^^^^
+                player.consumableToConsume = undefined;
                 break;
             }
         }

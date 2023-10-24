@@ -2,7 +2,7 @@ import { INPUT_ACTIONS_BITS, InputActions, PlayerActions } from "../../../../com
 import { Loots } from "../../../../common/src/definitions/loots";
 import { CircleHitbox } from "../../../../common/src/utils/hitbox";
 import { distanceSquared } from "../../../../common/src/utils/math";
-import { ItemType } from "../../../../common/src/utils/objectDefinitions";
+import { ItemType, ObstacleSpecialRoles } from "../../../../common/src/utils/objectDefinitions";
 import { type SuroiBitStream } from "../../../../common/src/utils/suroiBitStream";
 import { GunItem } from "../../inventory/gunItem";
 import { Loot } from "../../objects/loot";
@@ -64,12 +64,19 @@ export class InputPacket extends ReceivingPacket {
                 player.lastInteractionTime = player.game.now;
 
                 const detectionHitbox = new CircleHitbox(3, player.position);
+
+                const nearObjects = player.game.grid.intersectsHitbox(detectionHitbox);
+
                 const getClosestObject = (condition: (object: Loot | Obstacle) => boolean): Loot | Obstacle | undefined => {
                     let minDist = Number.MAX_VALUE;
                     let closestObject: Loot | Obstacle | undefined;
 
-                    for (const object of player.visibleObjects) {
-                        if ((object instanceof Loot || (object instanceof Obstacle && object.isDoor)) && object.hitbox !== undefined && condition(object)) {
+                    for (const object of nearObjects) {
+                        if (
+                            (object instanceof Loot || (object instanceof Obstacle && object.canInteract(player))) &&
+                            object.hitbox !== undefined &&
+                            condition(object)
+                        ) {
                             const dist = distanceSquared(object.position, player.position);
                             if (dist < minDist && object.hitbox.collidesWith(detectionHitbox)) {
                                 minDist = dist;
@@ -104,21 +111,21 @@ export class InputPacket extends ReceivingPacket {
                     player.disableInvulnerability();
                 };
 
-                if (closestObject instanceof Loot) {
+                if (closestObject instanceof Loot || closestObject.definition.role === ObstacleSpecialRoles.Activatable) {
                     if (closestObject.canInteract(player)) {
                         interact();
                     }
                     break;
                 }
 
-                if (closestObject.isDoor) {
+                if (closestObject.isDoor && !closestObject.door?.locked) {
                     interact();
 
                     // If the closest object is a door, then we allow other doors within the
                     // interaction range to be interacted with
 
-                    for (const object of player.visibleObjects) {
-                        if (object instanceof Obstacle && object.isDoor && object.hitbox.collidesWith(detectionHitbox) && object !== closestObject) {
+                    for (const object of nearObjects) {
+                        if (object instanceof Obstacle && object.isDoor && !object.door?.locked && object.hitbox.collidesWith(detectionHitbox) && object !== closestObject) {
                             object.interact(player);
                         }
                     }

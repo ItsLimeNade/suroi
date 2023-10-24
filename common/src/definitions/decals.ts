@@ -1,8 +1,10 @@
 import { type ObjectDefinition, ObjectDefinitions } from "../utils/objectDefinitions";
+import { RotationMode } from "./obstacles";
 
 export interface DecalDefinition extends ObjectDefinition {
     readonly image?: string
     readonly scale?: number
+    readonly rotationMode?: RotationMode // default is Limited
     readonly zIndex?: number
 }
 
@@ -10,7 +12,8 @@ export const Decals = new ObjectDefinitions<DecalDefinition>(
     [
         {
             idString: "explosion_decal",
-            name: "Explosion Decal"
+            name: "Explosion Decal",
+            rotationMode: RotationMode.Full
         },
         {
             idString: "floor_oil_01",

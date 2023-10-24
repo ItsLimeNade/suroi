@@ -1,12 +1,5 @@
 import { Container, Texture, TilingSprite } from "pixi.js";
-import {
-    AnimationType,
-    ObjectCategory,
-    PLAYER_RADIUS,
-    PlayerActions,
-    SpectateActions,
-    ZIndexes
-} from "../../../../common/src/constants";
+import { AnimationType, ObjectCategory, PLAYER_RADIUS, PlayerActions, SpectateActions, ZIndexes } from "../../../../common/src/constants";
 import { type ArmorDefinition } from "../../../../common/src/definitions/armors";
 import { Backpacks } from "../../../../common/src/definitions/backpacks";
 import { Emotes, type EmoteDefinition } from "../../../../common/src/definitions/emotes";
@@ -25,7 +18,6 @@ import { random, randomBoolean, randomFloat, randomVector } from "../../../../co
 import { v, vAdd, vAdd2, vClone, vRotate, type Vector } from "../../../../common/src/utils/vector";
 import { type Game } from "../game";
 import { GameObject } from "../types/gameObject";
-
 import { type Sound } from "../utils/soundManager";
 import { EaseFunctions, Tween } from "../utils/tween";
 import { Obstacle } from "./obstacle";
@@ -203,10 +195,11 @@ export class Player extends GameObject<ObjectCategory.Player> {
         const initialRotation = this.rotation + Math.PI / 2;
         const spinAmount = randomFloat(Math.PI / 2, Math.PI);
         if (weaponDef.casingParticles !== undefined) {
-            this.game.particleManager.spawnParticle({
+            this.game.particleManager.spawnParticles(weaponDef.casingParticles.count ?? 1, () => ({
                 frames: `${weaponDef.ammoType}_particle`,
                 zIndex: ZIndexes.Players,
-                position: vAdd(this.position, vRotate(weaponDef.casingParticles.position, this.rotation)),
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                position: vAdd(this.position, vRotate(weaponDef.casingParticles!.position, this.rotation)),
                 lifeTime: 400,
                 scale: {
                     start: 0.8,
@@ -222,7 +215,7 @@ export class Player extends GameObject<ObjectCategory.Player> {
                     end: initialRotation + spinAmount
                 },
                 speed: vRotate(vAdd2(randomVector(2, -5, 10, 15), -(spinAmount / 4), 0), this.rotation)
-            });
+            }));
         }
     }
 
@@ -475,11 +468,7 @@ export class Player extends GameObject<ObjectCategory.Player> {
         this.images.weapon.setVisible(weaponDef.image !== undefined);
         this.images.muzzleFlash.setVisible(weaponDef.image !== undefined);
         if (weaponDef.image) {
-            if (weaponDef.itemType === ItemType.Melee) {
-                this.images.weapon.setFrame(`${weaponDef.idString}`);
-            } else if (weaponDef.itemType === ItemType.Gun) {
-                this.images.weapon.setFrame(`${weaponDef.idString}_world`);
-            }
+            this.images.weapon.setFrame(`${weaponDef.idString}${weaponDef.itemType === ItemType.Gun || weaponDef.image.separateWorldImage ? "_world" : ""}`);
             this.images.weapon.setPos(weaponDef.image.position.x, weaponDef.image.position.y);
             this.images.weapon.setAngle(weaponDef.image.angle ?? 0);
 

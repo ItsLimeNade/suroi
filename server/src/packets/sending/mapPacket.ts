@@ -10,7 +10,7 @@ export class MapPacket extends SendingPacket {
     override readonly allocBytes = 1 << 13;
     override readonly type = PacketType.Map;
 
-    game: Game;
+    readonly game: Game;
 
     constructor(game: Game) {
         // This packet is only created a single time and this.player is never used
@@ -44,7 +44,7 @@ export class MapPacket extends SendingPacket {
         stream.writeBits(this.game.minimapObjects.size, 11);
 
         for (const object of this.game.minimapObjects) {
-            stream.writeObjectType(object.createObjectType());
+            stream.writeObjectType(object.objectType);
             stream.writePosition(object.position);
 
             switch (true) {

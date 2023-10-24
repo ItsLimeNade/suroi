@@ -1,11 +1,5 @@
 import type { WebSocket } from "uWebSockets.js";
-import {
-    AnimationType,
-    INVENTORY_MAX_WEAPONS, KillFeedMessageType,
-    ObjectCategory,
-    PLAYER_RADIUS,
-    PlayerActions
-} from "../../../common/src/constants";
+import { AnimationType, INVENTORY_MAX_WEAPONS, KillFeedMessageType, ObjectCategory, PLAYER_RADIUS, PlayerActions } from "../../../common/src/constants";
 import { Emotes, type EmoteDefinition } from "../../../common/src/definitions/emotes";
 import { type GunDefinition } from "../../../common/src/definitions/guns";
 import { Loots, type LootDefinition } from "../../../common/src/definitions/loots";
@@ -17,7 +11,7 @@ import { clamp } from "../../../common/src/utils/math";
 import { ItemType, type ExtendedWearerAttributes, reifyDefinition } from "../../../common/src/utils/objectDefinitions";
 import { ObjectSerializations, type ObjectsNetData } from "../../../common/src/utils/objectsSerializations";
 import { SuroiBitStream } from "../../../common/src/utils/suroiBitStream";
-import { v, vAdd, type Vector } from "../../../common/src/utils/vector";
+import { v, vAdd, vClone, vEqual, type Vector } from "../../../common/src/utils/vector";
 import { Config } from "../config";
 import { type Game } from "../game";
 import { HealingAction, ReloadAction, type Action } from "../inventory/action";
@@ -38,10 +32,13 @@ import { Emote } from "./emote";
 import { type Explosion } from "./explosion";
 import { Obstacle } from "./obstacle";
 import { Scopes } from "../../../common/src/definitions/scopes";
+import { ObjectType } from "../../../common/src/utils/objectType";
 
 export class Player extends GameObject {
     readonly type = ObjectCategory.Player;
     readonly hitbox: CircleHitbox;
+
+    override readonly objectType = ObjectType.categoryOnly(ObjectCategory.Player);
 
     readonly damageable = true;
 
@@ -131,13 +128,7 @@ export class Player extends GameObject {
         multiplier: 1
     };
 
-    get isMoving(): boolean {
-        return this.movement.up ||
-            this.movement.down ||
-            this.movement.left ||
-            this.movement.right ||
-            this.movement.moving;
-    }
+    isMoving = false;
 
     readonly movement = {
         up: false,
@@ -308,8 +299,8 @@ export class Player extends GameObject {
         this.inventory.addOrReplaceWeapon(2, "fists");
 
         this.inventory.scope = reifyDefinition("1x_scope", Scopes);
-        //this.inventory.scope = reifyDefinition("15x_scope", Scopes);
         //this.inventory.items["15x_scope"] = 1;
+        //this.inventory.scope = reifyDefinition("15x_scope", Scopes);
 
         // Inventory preset
         if (this.isDev && userData.lobbyClearing && !Config.disableLobbyClearing) {
@@ -327,15 +318,13 @@ export class Player extends GameObject {
             this.inventory.scope = "4x_scope";
         }
 
-        /*
-        const giveWeapon = (idString: string, index: number): void => {
+        /*const giveWeapon = (idString: string, index: number): void => {
             this.inventory.addOrReplaceWeapon(index, idString);
             const primaryItem = this.inventory.getWeapon(index) as GunItem;
             const primaryDefinition = primaryItem.definition;
             primaryItem.ammo = primaryDefinition.capacity;
             this.inventory.items[primaryDefinition.ammoType] = Infinity;
-        };
-        */
+        };*/
 
         this.updateAndApplyModifiers();
         this.dirty.activeWeaponIndex = true;
@@ -405,26 +394,24 @@ export class Player extends GameObject {
         }
         /* eslint-disable no-multi-spaces */
         const speed = Config.movementSpeed *                // Base speed
-            (FloorTypes[this.floor].speedMultiplier ?? 1) * // Floor player is standing in speed multiplier
+            (FloorTypes[this.floor].speedMultiplier ?? 1) * // Speed multiplier from floor player is standing in
             recoilMultiplier *                              // Recoil from items
             (this.action?.speedMultiplier ?? 1) *           // Speed modifier from performing actions
             (1 + (this.adrenaline / 1000)) *                // Linear speed boost from adrenaline
             this.activeItemDefinition.speedMultiplier *     // Active item speed modifier
             this.modifiers.baseSpeed;                       // Current on-wearer modifier
 
-        // remove it from the grid and re-insert after finishing calculating the new position
-        this.game.grid.removeObject(this);
+        const oldPosition = vClone(this.position);
         this.position = vAdd(this.position, v(movement.x * speed, movement.y * speed));
 
         // Find and resolve collisions
-        this.nearObjects = this.game.grid.intersectsRect(this.hitbox.toRectangle());
+        this.nearObjects = this.game.grid.intersectsHitbox(this.hitbox);
 
         for (let step = 0; step < 10; step++) {
             for (const potential of this.nearObjects) {
                 if (
                     potential instanceof Obstacle &&
                     potential.collidable &&
-                    potential.hitbox !== undefined &&
                     this.hitbox.collidesWith(potential.hitbox)
                 ) {
                     this.hitbox.resolveCollision(potential.hitbox);
@@ -435,7 +422,10 @@ export class Player extends GameObject {
         // World boundaries
         this.position.x = clamp(this.position.x, this.hitbox.radius, this.game.map.width - this.hitbox.radius);
         this.position.y = clamp(this.position.y, this.hitbox.radius, this.game.map.height - this.hitbox.radius);
-        this.game.grid.addObject(this);
+
+        this.isMoving = !vEqual(oldPosition, this.position);
+
+        if (this.isMoving) this.game.grid.addObject(this);
 
         // Disable invulnerability if the player moves or turns
         if (this.isMoving || this.turning) {
@@ -473,11 +463,9 @@ export class Player extends GameObject {
         let isInsideBuilding = false;
         for (const object of this.nearObjects) {
             if (object instanceof Building && !object.dead) {
-                if (object.scopeHitbox !== undefined) {
-                    if (object.scopeHitbox.collidesWith(this.hitbox)) {
-                        isInsideBuilding = true;
-                        break;
-                    }
+                if (object.scopeHitbox?.collidesWith(this.hitbox)) {
+                    isInsideBuilding = true;
+                    break;
                 }
             }
         }
@@ -528,7 +516,7 @@ export class Player extends GameObject {
     updateVisibleObjects(): void {
         this.ticksSinceLastUpdate = 0;
 
-        const newVisibleObjects = this.game.grid.intersectsRect(
+        const newVisibleObjects = this.game.grid.intersectsHitbox(
             RectangleHitbox.fromRect(
                 2 * this.xCullDist,
                 2 * this.yCullDist,
@@ -553,18 +541,14 @@ export class Player extends GameObject {
 
     sendPacket(packet: SendingPacket): void {
         const stream = SuroiBitStream.alloc(packet.allocBytes);
-        try {
-            packet.serialize(stream);
-        } catch (e) {
-            console.error("Error serializing packet. Details:", e);
-        }
-
-        this.sendData(stream);
+        packet.serialize(stream);
+        const buffer = stream.buffer.slice(0, Math.ceil(stream.index / 8));
+        this.sendData(buffer);
     }
 
-    sendData(stream: SuroiBitStream): void {
+    sendData(buffer: ArrayBuffer): void {
         try {
-            this.socket.send(stream.buffer.slice(0, Math.ceil(stream.index / 8)), true, true);
+            this.socket.send(buffer, true, true);
         } catch (e) {
             console.warn("Error sending packet. Details:", e);
         }

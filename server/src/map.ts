@@ -1,33 +1,18 @@
 import { ObjectCategory, PLAYER_RADIUS } from "../../common/src/constants";
-import { type BuildingDefinition, Buildings } from "../../common/src/definitions/buildings";
+import { Buildings, type BuildingDefinition } from "../../common/src/definitions/buildings";
 import { Decals } from "../../common/src/definitions/decals";
-import { type ObstacleDefinition, Obstacles, RotationMode } from "../../common/src/definitions/obstacles";
+import { Obstacles, RotationMode, type ObstacleDefinition } from "../../common/src/definitions/obstacles";
 import { type Orientation, type Variation } from "../../common/src/typings";
-import {
-    CircleHitbox,
-    ComplexHitbox,
-    type Hitbox,
-    type PolygonHitbox,
-    RectangleHitbox
-} from "../../common/src/utils/hitbox";
-import { generateTerrain, River, TerrainGrid } from "../../common/src/utils/mapUtils";
+import { CircleHitbox, ComplexHitbox, type PolygonHitbox, RectangleHitbox, type Hitbox } from "../../common/src/utils/hitbox";
+import { River, TerrainGrid, generateTerrain } from "../../common/src/utils/mapUtils";
 import { addAdjust, addOrientations, angleBetweenPoints, velFromAngle } from "../../common/src/utils/math";
 import { log } from "../../common/src/utils/misc";
-import { type ReferenceTo, reifyDefinition } from "../../common/src/utils/objectDefinitions";
+import { reifyDefinition, type ReferenceTo } from "../../common/src/utils/objectDefinitions";
 import { ObjectType } from "../../common/src/utils/objectType";
-import {
-    pickRandomInArray,
-    random,
-    randomBoolean,
-    randomFloat,
-    randomPointInsideCircle,
-    randomRotation,
-    randomVector,
-    SeededRandom
-} from "../../common/src/utils/random";
+import { SeededRandom, pickRandomInArray, random, randomBoolean, randomFloat, randomPointInsideCircle, randomRotation, randomVector } from "../../common/src/utils/random";
 import { v, vAdd, vClone, type Vector } from "../../common/src/utils/vector";
 import { Config, SpawnMode } from "./config";
-import { LootTables } from "./data/lootTables";
+import { LootTables, type WeightedItem } from "./data/lootTables";
 import { Maps } from "./data/maps";
 import { type Game } from "./game";
 import { Building } from "./objects/building";
@@ -46,7 +31,7 @@ export class Map {
 
     readonly oceanHitbox: Hitbox;
 
-    readonly seed: number;
+    readonly seed = random(0, 2 ** 31);
 
     readonly places: Array<{
         readonly name: string
@@ -93,7 +78,7 @@ export class Map {
         );
 
         this.rivers = Array.from(
-            { length: 3 },
+            { length: mapDefinition.rivers ?? 0 },
             () => {
                 const riverPoints: Vector[] = [];
 
@@ -239,7 +224,8 @@ export class Map {
             for (const place of mapDefinition.places) {
                 const position = v(
                     this.width * (place.position.x + randomFloat(-0.04, 0.04)),
-                    this.height * (place.position.y + randomFloat(-0.04, 0.04)));
+                    this.height * (place.position.y + randomFloat(-0.04, 0.04))
+                );
 
                 this.places.push({
                     name: place.name,
@@ -284,7 +270,7 @@ export class Map {
         const building = new Building(this.game, definition, vClone(position), orientation);
 
         for (const obstacleData of definition.obstacles ?? []) {
-            const obstacleDef = Obstacles.getByIDString(obstacleData.id);
+            const obstacleDef = Obstacles.getByIDString(obstacleData.idString);
             let obstacleRotation = obstacleData.rotation ?? Map.getRandomRotation(obstacleDef.rotationMode);
 
             if (obstacleDef.rotationMode === RotationMode.Limited) {
@@ -295,7 +281,7 @@ export class Map {
 
             if (obstacleData.lootSpawnOffset) lootSpawnOffset = addAdjust(v(0, 0), obstacleData.lootSpawnOffset, orientation);
 
-            this.generateObstacle(
+            const obstacle = this.generateObstacle(
                 obstacleDef,
                 addAdjust(position, obstacleData.position, orientation),
                 obstacleRotation,
@@ -304,6 +290,7 @@ export class Map {
                 lootSpawnOffset,
                 building
             );
+            if (obstacleData.idString === "vault_door") this.game.vaultDoor = obstacle; //fixme idString check
         }
 
         for (const lootData of definition.lootSpawners ?? []) {
@@ -313,7 +300,7 @@ export class Map {
             for (
                 const item of Array.from(
                     { length: random(table.min, table.max) },
-                    () => getLootTableLoot(drops)
+                    () => getLootTableLoot(drops as WeightedItem[]) // fixme This will break if multiple tables are specified
                 ).flat()
             ) {
                 this.game.addLoot(
@@ -327,7 +314,7 @@ export class Map {
         for (const subBuilding of definition.subBuildings ?? []) {
             const finalOrientation = addOrientations(orientation, subBuilding.orientation ?? 0);
             this.generateBuilding(
-                subBuilding.id,
+                subBuilding.idString,
                 addAdjust(position, subBuilding.position, finalOrientation),
                 finalOrientation
             );
@@ -339,7 +326,7 @@ export class Map {
 
         if (definition.decals) {
             for (const decal of definition.decals) {
-                this.game.grid.addObject(new Decal(this.game, reifyDefinition(decal.id, Decals), addAdjust(position, decal.position, orientation), decal.rotation));
+                this.game.grid.addObject(new Decal(this.game, reifyDefinition(decal.id, Decals), addAdjust(position, decal.position, orientation), addOrientations(orientation, decal.rotation ?? 0)));
             }
         }
 
@@ -426,7 +413,7 @@ export class Map {
         }
 
         for (let i = 0; i < count; i++) {
-            const loot = getLootTableLoot(LootTables[table].loot);
+            const loot = getLootTableLoot(LootTables[table].loot.flat());
 
             const position = this.getRandomPositionFor(ObjectType.fromString(ObjectCategory.Loot, loot[0].idString));
 
@@ -513,7 +500,7 @@ export class Map {
                 continue;
             }
 
-            for (const object of this.game.grid.intersectsRect(rectHitbox)) {
+            for (const object of this.game.grid.intersectsHitbox(rectHitbox)) {
                 if (object instanceof Obstacle || object instanceof Building) {
                     if (object.spawnHitbox.collidesWith(hitbox)) {
                         collided = true;

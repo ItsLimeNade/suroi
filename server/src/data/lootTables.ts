@@ -11,9 +11,16 @@ export type WeightedItem =
         readonly spawnSeparately?: boolean
         readonly weight: number
     };
-export interface LootTable { min: number, max: number, loot: WeightedItem[] }
+export interface LootTable { min: number, max: number, loot: WeightedItem[] | WeightedItem[][] }
 
 export const LootTables: Record<string, LootTable> = {
+    gas_can: {
+        min: 1,
+        max: 1,
+        loot: [
+            { item: "gas_can", weight: 1 }
+        ]
+    },
     ground_loot: {
         min: 1,
         max: 1,
@@ -68,11 +75,18 @@ export const LootTables: Record<string, LootTable> = {
         min: 1,
         max: 1,
         loot: [
-            { item: "tango_51", spawnSeparately: true, weight: 50 },
-            { item: "tango_51", spawnSeparately: true, count: 2, weight: 20 },
-            { item: "tango_51", spawnSeparately: true, count: 3, weight: 2.5 },
-            { item: "tango_51", spawnSeparately: true, count: 4, weight: 0.001 },
-            { item: "tango_51", spawnSeparately: true, count: 5, weight: 0.0000001 }
+            [
+                { item: "4x_scope", weight: 1 },
+                { item: "8x_scope", weight: 0.1 },
+                { item: "15x_scope", weight: 0.0025 }
+            ],
+            [
+                { item: "tango_51", spawnSeparately: true, weight: 60 },
+                { item: "tango_51", spawnSeparately: true, count: 2, weight: 30 },
+                { item: "tango_51", spawnSeparately: true, count: 3, weight: 3.5 },
+                { item: "tango_51", spawnSeparately: true, count: 4, weight: 0.1 },
+                { item: "tango_51", spawnSeparately: true, count: 5, weight: 0.0000001 }
+            ]
         ]
     },
     gold_rock: {
@@ -222,7 +236,7 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "hp18", weight: 1.25 },
         { item: "micro_uzi", weight: 1.25 },
         { item: "aug", weight: 1 },
-        { item: "m37", weight: 1 },
+        { item: "model_37", weight: 1 },
         { item: "ak47", weight: 0.8 },
         { item: "m3k", weight: 0.5 },
         { item: "m16a4", weight: 0.1 },
@@ -247,7 +261,7 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "2x_scope", weight: 1 },
         { item: "4x_scope", weight: 0.5 },
         { item: "8x_scope", weight: 0.1 },
-        { item: "15x_scope", weight: 0.0025 }
+        { item: "15x_scope", weight: 0.00025 }
     ],
     equipment: [
         { item: "hard_hat", weight: 1 },
@@ -274,7 +288,7 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "aug", weight: 1.05 },
         { item: "hp18", weight: 1 },
         { item: "mp40", weight: 1 },
-        { item: "m37", weight: 1 },
+        { item: "model_37", weight: 1 },
         { item: "m3k", weight: 0.8 },
         { item: "arx160", weight: 0.8 },
         { item: "flues", weight: 0.8 },
@@ -302,7 +316,7 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "2x_scope", weight: 1 },
         { item: "4x_scope", weight: 0.45 },
         { item: "8x_scope", weight: 0.1 },
-        { item: "15x_scope", weight: 0.05 }
+        { item: "15x_scope", weight: 0.005 }
     ],
     special_equipment: [
         { item: "hard_hat", weight: 1 },

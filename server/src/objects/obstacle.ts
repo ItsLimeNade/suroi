@@ -1,7 +1,7 @@
 import { ObjectCategory } from "../../../common/src/constants";
-import { Obstacles, RotationMode, type ObstacleDefinition } from "../../../common/src/definitions/obstacles";
+import { type ObstacleDefinition, Obstacles, RotationMode } from "../../../common/src/definitions/obstacles";
 import { type Orientation, type Variation } from "../../../common/src/typings";
-import { CircleHitbox, RectangleHitbox, type Hitbox } from "../../../common/src/utils/hitbox";
+import { CircleHitbox, type Hitbox, RectangleHitbox } from "../../../common/src/utils/hitbox";
 import { addAdjust, angleBetweenPoints, calculateDoorHitboxes } from "../../../common/src/utils/math";
 import { ItemType, ObstacleSpecialRoles, reifyDefinition } from "../../../common/src/utils/objectDefinitions";
 import { ObjectType } from "../../../common/src/utils/objectType";
@@ -22,9 +22,8 @@ import { Player } from "./player";
 
 export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> extends GameObject {
     override readonly type = ObjectCategory.Obstacle;
-    override createObjectType(): ObjectType<this["type"], Def> {
-        return ObjectType.fromString(this.type, this.definition.idString);
-    }
+
+    override objectType: ObjectType<this["type"], Def>;
 
     health: number;
     readonly maxHealth: number;
@@ -46,11 +45,14 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
     door?: {
         operationStyle: NonNullable<(ObstacleDefinition & { readonly role: ObstacleSpecialRoles.Door })["operationStyle"]>
         open: boolean
+        locked?: boolean
         closedHitbox: Hitbox
         openHitbox: Hitbox
         openAltHitbox?: Hitbox
         offset: number
     };
+
+    activated?: boolean;
 
     parentBuilding?: Building;
 
@@ -77,6 +79,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
         this.parentBuilding = parentBuilding;
 
         this.definition = reifyDefinition(definition, Obstacles);
+        this.objectType = ObjectType.fromString(this.type, this.definition.idString);
 
         this.health = this.maxHealth = definition.health;
 
@@ -89,7 +92,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
 
         if (definition.hasLoot) {
             const lootTable = LootTables[this.definition.idString];
-            const drops = lootTable.loot;
+            const drops = lootTable.loot.flat();
 
             this.loot = Array.from(
                 { length: random(lootTable.min, lootTable.max) },
@@ -98,7 +101,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
         }
 
         if (definition.spawnWithLoot) {
-            for (const item of getLootTableLoot(LootTables[this.definition.idString].loot)) {
+            for (const item of getLootTableLoot(LootTables[this.definition.idString].loot.flat())) {
                 this.game.addLoot(
                     item.idString,
                     this.position,
@@ -114,6 +117,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
             this.door = {
                 operationStyle: definition.operationStyle ?? "swivel",
                 open: false,
+                locked: definition.locked,
                 closedHitbox: this.hitbox.clone(),
                 openHitbox: hitboxes.openHitbox,
                 //@ts-expect-error undefined is okay here
@@ -170,7 +174,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
             if (this.definition.role === ObstacleSpecialRoles.Wall) {
                 this.parentBuilding?.damage();
 
-                for (const object of this.game.grid.intersectsRect(this.hitbox.toRectangle())) {
+                for (const object of this.game.grid.intersectsHitbox(this.hitbox)) {
                     if (
                         object instanceof Obstacle &&
                         object.definition.role === ObstacleSpecialRoles.Door
@@ -206,58 +210,73 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
         }
     }
 
-    interact(player: Player): void {
-        if (this.dead || this.door === undefined) return;
+    canInteract(player?: Player): boolean {
+        return !this.dead && (this.door !== undefined || (this.definition.role === ObstacleSpecialRoles.Activatable && player?.activeItem.definition.idString === this.definition.activator && !this.activated));
+    }
+
+    interact(player?: Player): void {
+        if (!this.canInteract(player)) return;
         if (!(this.hitbox instanceof RectangleHitbox)) {
             throw new Error("Door with non-rectangular hitbox");
         }
 
         this.game.grid.removeObject(this);
-        this.door.open = !this.door.open;
-        if (this.door.open) {
-            switch (this.door.operationStyle) {
-                case "swivel": {
-                    let isOnOtherSide = false;
-                    switch (this.rotation) {
-                        case 0:
-                            isOnOtherSide = player.position.y < this.position.y;
-                            break;
-                        case 1:
-                            isOnOtherSide = player.position.x < this.position.x;
-                            break;
-                        case 2:
-                            isOnOtherSide = player.position.y > this.position.y;
-                            break;
-                        case 3:
-                            isOnOtherSide = player.position.x > this.position.x;
-                            break;
-                    }
+        if (this.door !== undefined && !(this.door.open && this.definition.role === ObstacleSpecialRoles.Door && this.definition.openOnce)) {
+            this.door.open = !this.door.open;
+            if (this.door.open) {
+                switch (this.door.operationStyle) {
+                    case "swivel": {
+                        if (player !== undefined) {
+                            let isOnOtherSide = false;
+                            switch (this.rotation) {
+                                case 0:
+                                    isOnOtherSide = player.position.y < this.position.y;
+                                    break;
+                                case 1:
+                                    isOnOtherSide = player.position.x < this.position.x;
+                                    break;
+                                case 2:
+                                    isOnOtherSide = player.position.y > this.position.y;
+                                    break;
+                                case 3:
+                                    isOnOtherSide = player.position.x > this.position.x;
+                                    break;
+                            }
 
-                    if (isOnOtherSide) {
-                        this.door.offset = 3;
-                        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                        this.hitbox = this.door.openAltHitbox!.clone();
-                    } else {
-                        this.door.offset = 1;
-                        this.hitbox = this.door.openHitbox.clone();
+                            if (isOnOtherSide) {
+                                this.door.offset = 3;
+                                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                                this.hitbox = this.door.openAltHitbox!.clone();
+                            } else {
+                                this.door.offset = 1;
+                                this.hitbox = this.door.openHitbox.clone();
+                            }
+                        } else {
+                            this.door.offset = 1;
+                            this.hitbox = this.door.openHitbox.clone();
+                        }
+                        break;
                     }
-                    break;
+                    case "slide": {
+                        this.hitbox = this.door.openHitbox.clone();
+                        this.door.offset = 1;
+                        /*
+                            changing the value of offset is really just for interop
+                            with existing code, which already sends this value to the
+                            client
+                        */
+                        break;
+                    }
                 }
-                case "slide": {
-                    this.hitbox = this.door.openHitbox.clone();
-                    this.door.offset = 1;
-                    /*
-                        changing the value of offset is really just for interop
-                        with existing code, which already sends this value to the
-                        client
-                    */
-                    break;
-                }
+            } else {
+                this.door.offset = 0;
+                this.hitbox = this.door.closedHitbox.clone();
             }
-        } else {
-            this.door.offset = 0;
-            this.hitbox = this.door.closedHitbox.clone();
+        } else if (this.definition.role === ObstacleSpecialRoles.Activatable) {
+            this.activated = true;
+            setTimeout(() => this.game.vaultDoor?.interact(), 2000); //fixme hard coded behavior
         }
+
         this.game.grid.addObject(this);
 
         this.game.partialDirtyObjects.add(this);
@@ -274,6 +293,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
         ObjectSerializations[ObjectCategory.Obstacle].serializeFull(stream, {
             scale: this.scale,
             dead: this.dead,
+            activated: this.activated,
             definition: this.definition,
             door: this.door,
             fullUpdate: true,

@@ -3,7 +3,7 @@ import { Explosions, type ExplosionDefinition } from "../definitions/explosions"
 import { Guns, type GunDefinition } from "../definitions/guns";
 import { Loots, type LootDefinition } from "../definitions/loots";
 import { type Hitbox } from "./hitbox";
-import { distanceSquared } from "./math";
+import { clamp, distanceSquared } from "./math";
 import { reifyDefinition, type BulletDefinition, type ReferenceTo } from "./objectDefinitions";
 import { ObjectType } from "./objectType";
 import { v, vAdd, vClone, vMul, type Vector } from "./vector";
@@ -15,6 +15,7 @@ export interface BulletOptions {
     readonly sourceID: number
     readonly reflectionCount?: number
     readonly variance?: number
+    readonly clipDistance?: number
 }
 
 interface GameObject {
@@ -49,7 +50,7 @@ export class BaseBullet {
 
     readonly damagedIDs = new Set<number>();
 
-    readonly variance: number;
+    readonly rangeVariance: number;
 
     dead = false;
 
@@ -80,19 +81,23 @@ export class BaseBullet {
             this.source = reifyDefinition<ExplosionDefinition>(options.source as string, Explosions);
             this._sourceObjectType = ObjectType.fromString<ObjectCategory.Explosion, ExplosionDefinition>(ObjectCategory.Explosion, this.source.idString);
         }
-
         //! evil code ends here
 
         this.reflectionCount = options.reflectionCount ?? 0;
         this.sourceID = options.sourceID;
-        this.variance = options.variance ?? 0;
+        this.rangeVariance = options.variance ?? 0;
 
         this.definition = this.source.ballistics;
-        this.maxDistance = (this.definition.maxDistance * (this.variance + 1)) / (this.reflectionCount + 1);
 
+        let range = this.definition.maxDistance;
+
+        if (this.definition.goToMouse && options.clipDistance !== undefined) {
+            range = clamp(options.clipDistance, 0, this.definition.maxDistance);
+        }
+        this.maxDistance = (range * (this.rangeVariance + 1)) / (this.reflectionCount + 1);
         this.maxDistanceSquared = this.maxDistance ** 2;
 
-        this.velocity = vMul(v(Math.sin(this.rotation), -Math.cos(this.rotation)), this.definition.speed * (this.variance + 1));
+        this.velocity = vMul(v(Math.sin(this.rotation), -Math.cos(this.rotation)), this.definition.speed * (this.rangeVariance + 1));
 
         this.canHitShooter = (this.definition.shrapnel ?? this.reflectionCount > 0);
     }

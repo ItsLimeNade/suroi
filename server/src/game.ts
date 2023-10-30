@@ -12,7 +12,8 @@ import { Bullet, type DamageRecord, type ServerBulletOptions } from "./objects/b
 import { KillFeedPacket } from "./packets/sending/killFeedPacket";
 import {
     KILL_LEADER_MIN_KILLS,
-    KillFeedMessageType, OBJECT_ID_BITS,
+    KillFeedMessageType,
+    OBJECT_ID_BITS,
     ObjectCategory,
     TICKS_PER_SECOND
 } from "../../common/src/constants";
@@ -23,15 +24,14 @@ import { MapPacket } from "./packets/sending/mapPacket";
 import { UpdatePacket } from "./packets/sending/updatePacket";
 import { endGame, type PlayerContainer } from "./server";
 import { GameOverPacket } from "./packets/sending/gameOverPacket";
-import { log } from "../../common/src/utils/misc";
 import { type WebSocket } from "uWebSockets.js";
 import { ObjectType } from "../../common/src/utils/objectType";
 import { random, randomPointInsideCircle } from "../../common/src/utils/random";
 import { v, type Vector } from "../../common/src/utils/vector";
 import { distanceSquared } from "../../common/src/utils/math";
 import { JoinedPacket } from "./packets/sending/joinedPacket";
-import { removeFrom } from "./utils/misc";
-import { Loots, type LootDefinition } from "../../common/src/definitions/loots";
+import { Logger, removeFrom } from "./utils/misc";
+import { type LootDefinition, Loots } from "../../common/src/definitions/loots";
 import { type GunItem } from "./inventory/gunItem";
 import { IDAllocator } from "./utils/idAllocator";
 import { type ReferenceTo, reifyDefinition } from "../../common/src/utils/objectDefinitions";
@@ -102,8 +102,6 @@ export class Game {
 
     tickDelta = 1000 / TICKS_PER_SECOND;
 
-    vaultDoor?: Obstacle; //fixme variable in Game class used for a specific object
-
     constructor(id: number) {
         this._id = id;
 
@@ -140,7 +138,12 @@ export class Game {
             for (const bullet of this.bullets) {
                 records = records.concat(bullet.update());
 
-                if (bullet.dead) this.bullets.delete(bullet);
+                if (bullet.dead) {
+                    if (bullet.definition.onHitExplosion && !bullet.reflected) {
+                        this.addExplosion(bullet.definition.onHitExplosion, bullet.position, bullet.shooter);
+                    }
+                    this.bullets.delete(bullet);
+                }
             }
 
             // Do the damage after updating all bullets
@@ -262,7 +265,7 @@ export class Game {
             if (this.tickTimes.length >= 200) {
                 const mspt = this.tickTimes.reduce((a, b) => a + b) / this.tickTimes.length;
 
-                log(`Game #${this._id} | Avg ms/tick: ${mspt.toFixed(2)} | Load: ${((mspt / TICKS_PER_SECOND) * 100).toFixed(1)}%`);
+                Logger.log(`Game #${this._id} | Avg ms/tick: ${mspt.toFixed(2)} | Load: ${((mspt / TICKS_PER_SECOND) * 100).toFixed(1)}%`);
                 this.tickTimes = [];
             }
 
@@ -274,23 +277,21 @@ export class Game {
     get killLeader(): Player | undefined { return this._killLeader; }
 
     updateKillLeader(player: Player): void {
-        const oldKillLeader: Player | undefined = this._killLeader;
+        const oldKillLeader = this._killLeader;
 
         if (player.kills > (this._killLeader?.kills ?? (KILL_LEADER_MIN_KILLS - 1))) {
             this._killLeader = player;
 
             if (oldKillLeader !== this._killLeader) {
-                this.killFeedMessages.add(new KillFeedPacket(this._killLeader, KillFeedMessageType.KillLeaderAssigned));
+                this._sendKillFeedMessage(KillFeedMessageType.KillLeaderAssigned);
             }
-        }
-
-        if (player === oldKillLeader && this._killLeader !== undefined) {
-            this.killFeedMessages.add(new KillFeedPacket(this._killLeader, KillFeedMessageType.KillLeaderUpdated));
+        } else if (player === oldKillLeader) {
+            this._sendKillFeedMessage(KillFeedMessageType.KillLeaderUpdated);
         }
     }
 
     killLeaderDead(): void {
-        if (this._killLeader !== undefined) this.killFeedMessages.add(new KillFeedPacket(this._killLeader, KillFeedMessageType.KillLeaderDead));
+        this._sendKillFeedMessage(KillFeedMessageType.KillLeaderDead);
         let newKillLeader: Player | undefined;
         for (const player of this.livingPlayers) {
             if (player.kills > (newKillLeader?.kills ?? (KILL_LEADER_MIN_KILLS - 1))) {
@@ -298,7 +299,11 @@ export class Game {
             }
         }
         this._killLeader = newKillLeader;
-        if (this._killLeader !== undefined) this.killFeedMessages.add(new KillFeedPacket(this._killLeader, KillFeedMessageType.KillLeaderAssigned));
+        this._sendKillFeedMessage(KillFeedMessageType.KillLeaderAssigned);
+    }
+
+    private _sendKillFeedMessage(messageType: KillFeedMessageType): void {
+        if (this._killLeader !== undefined) this.killFeedMessages.add(new KillFeedPacket(this._killLeader, messageType));
     }
 
     addPlayer(socket: WebSocket<PlayerContainer>): Player {
@@ -349,10 +354,10 @@ export class Game {
             this.startTimeoutID = setTimeout(() => {
                 this._started = true;
                 this.gas.advanceGas();
-            }, 5000);
+            }, 3000);
         }
 
-        log(`Game #${this.id} | "${player.name}" joined`);
+        Logger.log(`Game #${this.id} | "${player.name}" joined`);
     }
 
     removePlayer(player: Player): void {

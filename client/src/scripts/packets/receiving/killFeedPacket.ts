@@ -4,15 +4,13 @@ import { type ExplosionDefinition } from "../../../../../common/src/definitions/
 import { type ItemDefinition } from "../../../../../common/src/utils/objectDefinitions";
 import { type SuroiBitStream } from "../../../../../common/src/utils/suroiBitStream";
 import { ReceivingPacket } from "../../types/receivingPacket";
-import { consoleVariables } from "../../utils/console/variables";
 import { UI_DEBUG_MODE } from "../../utils/constants";
-import { randomKillWord } from "../../utils/misc";
 
 export class KillFeedPacket extends ReceivingPacket {
     override deserialize(stream: SuroiBitStream): void {
         const killFeed = $("#kill-feed");
         const killFeedItem = $('<div class="kill-feed-item">');
-        const anonymizePlayers = consoleVariables.get.builtIn("cv_anonymize_player_names").value;
+        const anonymizePlayers = this.game.console.getConfig("cv_anonymize_player_names");
 
         const messageType: KillFeedMessageType = stream.readBits(KILL_FEED_MESSAGE_TYPE_BITS);
         switch (messageType) {
@@ -35,17 +33,6 @@ export class KillFeedPacket extends ReceivingPacket {
                     if (killedBy) killedBy.name = DEFAULT_USERNAME;
                 }
 
-                switch (true) {
-                    case killed.id === this.game.activePlayerID: { // was killed
-                        killFeedItem.addClass("kill-feed-item-victim");
-                        break;
-                    }
-                    case killedBy?.id === this.game.activePlayerID: { // killed other
-                        killFeedItem.addClass("kill-feed-item-killer");
-                        break;
-                    }
-                }
-
                 let weaponUsed: ItemDefinition | ExplosionDefinition | undefined;
                 let killstreak: number | undefined;
                 if (stream.readBoolean()) { // used a weapon
@@ -57,10 +44,10 @@ export class KillFeedPacket extends ReceivingPacket {
                 const gasKill = stream.readBoolean();
 
                 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-                switch (consoleVariables.get.builtIn("cv_killfeed_style").value) {
+                switch (this.game.console.getConfig("cv_killfeed_style")) {
                     case "text": {
                         const message = twoPartyInteraction
-                            ? `${killedBy!.name} ${randomKillWord()} ${killed.name}`
+                            ? `${killedBy!.name} killed ${killed.name}`
                             : gasKill
                                 ? `${killed.name} died to the gas`
                                 : `${killed.name} committed suicide`;
@@ -79,10 +66,23 @@ export class KillFeedPacket extends ReceivingPacket {
                     }
                 }
 
+                switch (this.game.activePlayerID) {
+                    case killed.id: { // was killed
+                        killFeedItem.addClass("kill-feed-item-victim");
+                        break;
+                    }
+                    case killedBy?.id: { // killed other
+                        killFeedItem.addClass("kill-feed-item-killer");
+                        break;
+                    }
+                }
+
                 break;
             }
 
             case KillFeedMessageType.KillLeaderAssigned: {
+                if (stream.readObjectID() === this.game.activePlayerID) killFeedItem.addClass("kill-feed-item-killer");
+
                 const name = stream.readPlayerNameWithColor();
                 const kills = stream.readBits(7);
 

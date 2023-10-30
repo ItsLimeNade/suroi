@@ -153,8 +153,9 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
                         );
                     }
                 } else {
+                    const soundName = definition.doorSound ?? "door";
                     this.playSound(
-                        offset === 0 ? `${definition.idString}_close` : `${definition.idString}_open`,
+                        offset === 0 ? `${soundName}_close` : `${soundName}_open`,
                         0.3,
                         48
                     );
@@ -314,7 +315,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
     }
 
     canInteract(player: Player): boolean {
-        return !this.dead && ((this.isDoor && !this.door?.locked) || (this.definition.role === ObstacleSpecialRoles.Activatable && player.activeItem.idString === this.definition.activator && !this.activated));
+        return !this.dead && ((this.isDoor && !this.door?.locked) || (this.definition.role === ObstacleSpecialRoles.Activatable && player.activeItem.idString === this.definition.requiredItem && !this.activated));
     }
 
     hitEffect(position: Vector, angle: number): void {

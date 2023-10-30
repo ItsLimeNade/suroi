@@ -26,6 +26,7 @@ export interface ServerBulletOptions {
     readonly rotation: number
     readonly reflectionCount?: number
     readonly variance?: number
+    readonly clipDistance?: number
 }
 
 export class Bullet extends BaseBullet {
@@ -34,13 +35,16 @@ export class Bullet extends BaseBullet {
     readonly sourceGun: Weapon;
     readonly shooter: GameObject;
 
+    clipDistance: number;
+    reflected = false;
+
     constructor(
         game: Game,
         source: Weapon,
         shooter: GameObject,
         options: ServerBulletOptions
     ) {
-        const variance = source.definition.ballistics.variance;
+        const variance = source.definition.ballistics.rangeVariance;
         super({
             ...options,
             rotation: normalizeAngle(options.rotation),
@@ -49,6 +53,7 @@ export class Bullet extends BaseBullet {
             variance: variance ? randomFloat(0, variance) : undefined
         });
 
+        this.clipDistance = options.clipDistance ?? this.definition.maxDistance;
         this.game = game;
         this.sourceGun = source;
         this.shooter = shooter;
@@ -108,6 +113,7 @@ export class Bullet extends BaseBullet {
 
                     if (object.definition.reflectBullets && this.reflectionCount < 3) {
                         this.reflect(collision.intersection.normal);
+                        this.reflected = true;
                     }
 
                     this.dead = true;
@@ -130,7 +136,8 @@ export class Bullet extends BaseBullet {
                 position: vAdd(this.position, v(Math.sin(rotation), -Math.cos(rotation))),
                 rotation,
                 reflectionCount: this.reflectionCount + 1,
-                variance: this.variance
+                variance: this.rangeVariance,
+                clipDistance: this.clipDistance
             }
         );
     }

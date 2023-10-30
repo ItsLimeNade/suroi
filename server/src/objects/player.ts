@@ -1,8 +1,16 @@
 import type { WebSocket } from "uWebSockets.js";
-import { AnimationType, INVENTORY_MAX_WEAPONS, KillFeedMessageType, ObjectCategory, PLAYER_RADIUS, PlayerActions } from "../../../common/src/constants";
+import {
+    AnimationType, DEFAULT_USERNAME,
+    INVENTORY_MAX_WEAPONS,
+    KillFeedMessageType,
+    MAX_MOUSE_DISTANCE,
+    ObjectCategory,
+    PLAYER_RADIUS,
+    PlayerActions
+} from "../../../common/src/constants";
 import { Emotes, type EmoteDefinition } from "../../../common/src/definitions/emotes";
 import { type GunDefinition } from "../../../common/src/definitions/guns";
-import { Loots, type LootDefinition } from "../../../common/src/definitions/loots";
+import { Loots } from "../../../common/src/definitions/loots";
 import { type MeleeDefinition } from "../../../common/src/definitions/melees";
 import { type SkinDefinition } from "../../../common/src/definitions/skins";
 import { CircleHitbox, RectangleHitbox } from "../../../common/src/utils/hitbox";
@@ -158,6 +166,11 @@ export class Player extends GameObject {
     turning = false;
 
     /**
+     * The distance from the player position to the player mouse in game units
+     */
+    distanceToMouse = MAX_MOUSE_DISTANCE;
+
+    /**
      * Keeps track of various fields which are "dirty"
      * and therefore need to be sent to the client for
      * updating
@@ -175,12 +188,16 @@ export class Player extends GameObject {
 
     readonly inventory = new Inventory(this);
 
-    get activeItem(): InventoryItem<LootDefinition> {
+    get activeItemIndex(): number {
+        return this.inventory.activeWeaponIndex;
+    }
+
+    get activeItem(): InventoryItem<MeleeDefinition | GunDefinition> {
         return this.inventory.activeWeapon;
     }
 
-    get activeItemIndex(): number {
-        return this.inventory.activeWeaponIndex;
+    get activeItemDefinition(): MeleeDefinition | GunDefinition {
+        return this.activeItem.definition;
     }
 
     readonly animation = {
@@ -238,7 +255,13 @@ export class Player extends GameObject {
 
         // The action slot is now free, meaning our player isn't doing anything
         // Let's try reloading our empty gun then, unless we just cancelled a reload
-        if (!wasReload && value === undefined && this.activeItem instanceof GunItem && this.activeItem.ammo <= 0) {
+        if (
+            !wasReload &&
+            value === undefined &&
+            this.activeItem instanceof GunItem &&
+            this.activeItem.ammo <= 0 &&
+            this.inventory.items[(this.activeItemDefinition as GunDefinition).ammoType] !== 0
+        ) {
             this._action = new ReloadAction(this, this.activeItem);
         }
     }
@@ -274,14 +297,14 @@ export class Player extends GameObject {
 
         const userData = socket.getUserData();
         this.socket = socket;
-        this.name = "Player";
+        this.name = DEFAULT_USERNAME;
         this.ip = userData.ip;
         this.role = userData.role;
         this.isDev = userData.isDev;
         this.nameColor = userData.nameColor;
 
         this.loadout = {
-            skin: Loots.getByIDString<SkinDefinition>("forest_camo"),
+            skin: Loots.getByIDString<SkinDefinition>("hazel_jumpsuit"),
             emotes: [
                 Emotes.getByIDString("happy_face"),
                 Emotes.getByIDString("thumbs_up"),
@@ -299,8 +322,8 @@ export class Player extends GameObject {
         this.inventory.addOrReplaceWeapon(2, "fists");
 
         this.inventory.scope = reifyDefinition("1x_scope", Scopes);
-        //this.inventory.items["15x_scope"] = 1;
-        //this.inventory.scope = reifyDefinition("15x_scope", Scopes);
+        // this.inventory.items["15x_scope"] = 1;
+        // this.inventory.scope = reifyDefinition("15x_scope", Scopes);
 
         // Inventory preset
         if (this.isDev && userData.lobbyClearing && !Config.disableLobbyClearing) {
@@ -318,13 +341,15 @@ export class Player extends GameObject {
             this.inventory.scope = "4x_scope";
         }
 
-        /*const giveWeapon = (idString: string, index: number): void => {
+        /*
+        const giveWeapon = (idString: ReferenceTo<GunDefinition>, index: number): void => {
             this.inventory.addOrReplaceWeapon(index, idString);
             const primaryItem = this.inventory.getWeapon(index) as GunItem;
             const primaryDefinition = primaryItem.definition;
             primaryItem.ammo = primaryDefinition.capacity;
             this.inventory.items[primaryDefinition.ammoType] = Infinity;
-        };*/
+        };
+        */
 
         this.updateAndApplyModifiers();
         this.dirty.activeWeaponIndex = true;
@@ -350,10 +375,6 @@ export class Player extends GameObject {
         this.yCullDist = this._zoom * 1.35;
         this.dirty.zoom = true;
         this.updateVisibleObjects();
-    }
-
-    get activeItemDefinition(): MeleeDefinition | GunDefinition {
-        return this.activeItem.definition as MeleeDefinition | GunDefinition;
     }
 
     give(idString: string): void {
@@ -662,11 +683,6 @@ export class Player extends GameObject {
 
     // dies of death
     die(source?: GameObject | "gas", weaponUsed?: GunItem | MeleeItem | Explosion): void {
-        // Remove player from kill leader
-        if (this === this.game.killLeader) {
-            this.game.killLeaderDead();
-        }
-
         // Death logic
         if (this.health > 0 || this.dead) return;
 
@@ -780,6 +796,11 @@ export class Player extends GameObject {
         // Send game over to dead player
         if (!this.disconnected) {
             this.sendPacket(new GameOverPacket(this, false));
+        }
+
+        // Remove player from kill leader
+        if (this === this.game.killLeader) {
+            this.game.killLeaderDead();
         }
     }
 

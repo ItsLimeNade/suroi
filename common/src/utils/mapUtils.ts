@@ -272,9 +272,9 @@ export class TerrainGrid {
         this.width = Math.floor(width / this.cellSize);
         this.height = Math.floor(height / this.cellSize);
 
-        for (let x = 0; x <= width; x++) {
+        for (let x = 0; x <= this.width; x++) {
             this._grid[x] = [];
-            for (let y = 0; y <= height; y++) {
+            for (let y = 0; y <= this.height; y++) {
                 this._grid[x][y] = [];
             }
         }
@@ -297,14 +297,17 @@ export class TerrainGrid {
     }
 
     getFloor(position: Vector): string {
-        // assume if no floor was found at this position, its in the ocean
+        // assume if no floor was found at this position, it's in the ocean
         let floorType = "water";
 
+        let hasFloor = false; // fixme hack to prevent rivers from slowing down the player when the port spawns on top
         const pos = this._roundToCells(position);
         for (const floor of this._grid[pos.x][pos.y]) {
+            if (floor.type !== "stone" && hasFloor) continue;
             if (floor.hitbox.isPointInside(position)) {
+                if (floor.type === "stone") return "stone";
                 floorType = floor.type;
-                break;
+                hasFloor = true;
             }
         }
 

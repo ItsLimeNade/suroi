@@ -9,7 +9,7 @@ import { ObjectSerializations } from "../../../common/src/utils/objectsSerializa
 import { random } from "../../../common/src/utils/random";
 import { type SuroiBitStream } from "../../../common/src/utils/suroiBitStream";
 import { vAdd, type Vector } from "../../../common/src/utils/vector";
-import { LootTables } from "../data/lootTables";
+import { LootTables, type WeightedItem } from "../data/lootTables";
 import { type Game } from "../game";
 import { type GunItem } from "../inventory/gunItem";
 import { InventoryItem } from "../inventory/inventoryItem";
@@ -92,12 +92,22 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
 
         if (definition.hasLoot) {
             const lootTable = LootTables[this.definition.idString];
-            const drops = lootTable.loot.flat();
+            // TODO Clean up code
+            for (let i = 0; i < random(lootTable.min, lootTable.max); i++) {
+                if (lootTable.loot.length > 0 && lootTable.loot[0] instanceof Array) {
+                    for (const loot of lootTable.loot) {
+                        for (const drop of getLootTableLoot(loot as WeightedItem[])) this.loot.push(drop);
+                    }
+                } else {
+                    for (const drop of getLootTableLoot(lootTable.loot as WeightedItem[])) this.loot.push(drop);
+                }
+            }
+            /*const drops = lootTable.loot.flat();
 
             this.loot = Array.from(
                 { length: random(lootTable.min, lootTable.max) },
                 () => getLootTableLoot(drops)
-            ).flat();
+            ).flat();*/
         }
 
         if (definition.spawnWithLoot) {
@@ -211,75 +221,94 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
     }
 
     canInteract(player?: Player): boolean {
-        return !this.dead && (this.door !== undefined || (this.definition.role === ObstacleSpecialRoles.Activatable && player?.activeItem.definition.idString === this.definition.activator && !this.activated));
+        return !this.dead && (this.door !== undefined || (this.definition.role === ObstacleSpecialRoles.Activatable && player?.activeItem.definition.idString === this.definition.requiredItem && !this.activated));
     }
 
     interact(player?: Player): void {
         if (!this.canInteract(player)) return;
+
+        switch (this.definition.role) {
+            case ObstacleSpecialRoles.Door:
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                if (!(this.door!.open &&
+                    this.definition.role === ObstacleSpecialRoles.Door &&
+                    this.definition.openOnce)) {
+                    this.toggleDoor(player);
+                }
+                break;
+            case ObstacleSpecialRoles.Activatable:
+                this.activated = true;
+
+                if (this.parentBuilding && this.definition.interactType) {
+                    for (const obstacle of this.parentBuilding.interactableObstacles) {
+                        if (obstacle.definition.idString === this.definition.interactType) {
+                            setTimeout(() => { obstacle.interact(); }, this.definition.interactDelay);
+                        }
+                    }
+                }
+                break;
+        }
+
+        this.game.partialDirtyObjects.add(this);
+    }
+
+    toggleDoor(player?: Player): void {
+        if (!this.door) return;
         if (!(this.hitbox instanceof RectangleHitbox)) {
             throw new Error("Door with non-rectangular hitbox");
         }
 
-        this.game.grid.removeObject(this);
-        if (this.door !== undefined && !(this.door.open && this.definition.role === ObstacleSpecialRoles.Door && this.definition.openOnce)) {
-            this.door.open = !this.door.open;
-            if (this.door.open) {
-                switch (this.door.operationStyle) {
-                    case "swivel": {
-                        if (player !== undefined) {
-                            let isOnOtherSide = false;
-                            switch (this.rotation) {
-                                case 0:
-                                    isOnOtherSide = player.position.y < this.position.y;
-                                    break;
-                                case 1:
-                                    isOnOtherSide = player.position.x < this.position.x;
-                                    break;
-                                case 2:
-                                    isOnOtherSide = player.position.y > this.position.y;
-                                    break;
-                                case 3:
-                                    isOnOtherSide = player.position.x > this.position.x;
-                                    break;
-                            }
+        this.door.open = !this.door.open;
+        if (this.door.open) {
+            switch (this.door.operationStyle) {
+                case "swivel": {
+                    if (player !== undefined) {
+                        let isOnOtherSide = false;
+                        switch (this.rotation) {
+                            case 0:
+                                isOnOtherSide = player.position.y < this.position.y;
+                                break;
+                            case 1:
+                                isOnOtherSide = player.position.x < this.position.x;
+                                break;
+                            case 2:
+                                isOnOtherSide = player.position.y > this.position.y;
+                                break;
+                            case 3:
+                                isOnOtherSide = player.position.x > this.position.x;
+                                break;
+                        }
 
-                            if (isOnOtherSide) {
-                                this.door.offset = 3;
-                                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                                this.hitbox = this.door.openAltHitbox!.clone();
-                            } else {
-                                this.door.offset = 1;
-                                this.hitbox = this.door.openHitbox.clone();
-                            }
+                        if (isOnOtherSide) {
+                            this.door.offset = 3;
+                            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                            this.hitbox = this.door.openAltHitbox!.clone();
                         } else {
                             this.door.offset = 1;
                             this.hitbox = this.door.openHitbox.clone();
                         }
-                        break;
-                    }
-                    case "slide": {
-                        this.hitbox = this.door.openHitbox.clone();
+                    } else {
                         this.door.offset = 1;
-                        /*
-                            changing the value of offset is really just for interop
-                            with existing code, which already sends this value to the
-                            client
-                        */
-                        break;
+                        this.hitbox = this.door.openHitbox.clone();
                     }
+                    break;
                 }
-            } else {
-                this.door.offset = 0;
-                this.hitbox = this.door.closedHitbox.clone();
+                case "slide": {
+                    this.hitbox = this.door.openHitbox.clone();
+                    this.door.offset = 1;
+                    /*
+                        changing the value of offset is really just for interop
+                        with existing code, which already sends this value to the
+                        client
+                    */
+                    break;
+                }
             }
-        } else if (this.definition.role === ObstacleSpecialRoles.Activatable) {
-            this.activated = true;
-            setTimeout(() => this.game.vaultDoor?.interact(), 2000); //fixme hard coded behavior
+        } else {
+            this.door.offset = 0;
+            this.hitbox = this.door.closedHitbox.clone();
         }
-
         this.game.grid.addObject(this);
-
-        this.game.partialDirtyObjects.add(this);
     }
 
     override serializePartial(stream: SuroiBitStream): void {

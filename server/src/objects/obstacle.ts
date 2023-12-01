@@ -3,43 +3,39 @@ import { type ObstacleDefinition, Obstacles, RotationMode } from "../../../commo
 import { type Orientation, type Variation } from "../../../common/src/typings";
 import { CircleHitbox, type Hitbox, RectangleHitbox } from "../../../common/src/utils/hitbox";
 import { addAdjust, angleBetweenPoints, calculateDoorHitboxes } from "../../../common/src/utils/math";
-import { ItemType, ObstacleSpecialRoles, reifyDefinition } from "../../../common/src/utils/objectDefinitions";
-import { ObjectType } from "../../../common/src/utils/objectType";
-import { ObjectSerializations } from "../../../common/src/utils/objectsSerializations";
+import { ItemType, ObstacleSpecialRoles, type ReifiableDef } from "../../../common/src/utils/objectDefinitions";
+import { type ObjectsNetData } from "../../../common/src/utils/objectsSerializations";
 import { random } from "../../../common/src/utils/random";
-import { type SuroiBitStream } from "../../../common/src/utils/suroiBitStream";
 import { vAdd, type Vector } from "../../../common/src/utils/vector";
 import { LootTables, type WeightedItem } from "../data/lootTables";
 import { type Game } from "../game";
 import { type GunItem } from "../inventory/gunItem";
 import { InventoryItem } from "../inventory/inventoryItem";
-import { MeleeItem } from "../inventory/meleeItem";
+import { type MeleeItem } from "../inventory/meleeItem";
 import { GameObject } from "../types/gameObject";
-import { getLootTableLoot, type LootItem } from "../utils/misc";
+import { getLootTableLoot, getRandomIdString, type LootItem } from "../utils/misc";
 import { type Building } from "./building";
 import { type Explosion } from "./explosion";
-import { Player } from "./player";
+import { type Player } from "./player";
 
-export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> extends GameObject {
+export class Obstacle extends GameObject<ObjectCategory.Obstacle> {
     override readonly type = ObjectCategory.Obstacle;
-
-    override objectType: ObjectType<this["type"], Def>;
+    override readonly damageable = true;
 
     health: number;
     readonly maxHealth: number;
     readonly maxScale: number;
 
-    readonly damageable = true;
     collidable: boolean;
 
     readonly variation: Variation;
 
-    readonly spawnHitbox: Hitbox;
+    spawnHitbox: Hitbox;
 
     readonly loot: LootItem[] = [];
     readonly lootSpawnOffset?: Vector;
 
-    readonly definition: Def;
+    readonly definition: ObstacleDefinition;
 
     readonly isDoor: boolean;
     door?: {
@@ -60,7 +56,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
 
     constructor(
         game: Game,
-        definition: Def,
+        type: ReifiableDef<ObstacleDefinition>,
         position: Vector,
         rotation: number,
         scale: number,
@@ -78,10 +74,9 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
 
         this.parentBuilding = parentBuilding;
 
-        this.definition = reifyDefinition(definition, Obstacles);
-        this.objectType = ObjectType.fromString(this.type, this.definition.idString);
+        const definition = this.definition = Obstacles.reify(type);
 
-        this.health = this.maxHealth = definition.health;
+        this.health = this.maxHealth = this.definition.health;
 
         const hitboxRotation = this.definition.rotationMode === RotationMode.Limited ? rotation as Orientation : 0;
 
@@ -102,12 +97,12 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
                     for (const drop of getLootTableLoot(lootTable.loot as WeightedItem[])) this.loot.push(drop);
                 }
             }
-            /*const drops = lootTable.loot.flat();
+            /* const drops = lootTable.loot.flat();
 
             this.loot = Array.from(
                 { length: random(lootTable.min, lootTable.max) },
                 () => getLootTableLoot(drops)
-            ).flat();*/
+            ).flat(); */
         }
 
         if (definition.spawnWithLoot) {
@@ -120,7 +115,8 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
             }
         }
 
-        // eslint-disable-next-line no-cond-assign
+        /* eslint-disable no-cond-assign */
+        // noinspection JSAssignmentUsedAsCondition
         if (this.isDoor = (definition.role === ObstacleSpecialRoles.Door)) {
             const hitboxes = calculateDoorHitboxes(definition, this.position, this.rotation as Orientation);
 
@@ -130,14 +126,14 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
                 locked: definition.locked,
                 closedHitbox: this.hitbox.clone(),
                 openHitbox: hitboxes.openHitbox,
-                //@ts-expect-error undefined is okay here
+                // @ts-expect-error undefined is okay here
                 openAltHitbox: hitboxes.openAltHitbox,
                 offset: 0
             };
         }
     }
 
-    override damage(amount: number, source: GameObject, weaponUsed?: GunItem | MeleeItem | Explosion, position?: Vector): void {
+    damage(amount: number, source: GameObject, weaponUsed?: GunItem | MeleeItem | Explosion, position?: Vector): void {
         const definition = this.definition;
 
         if (this.health === 0 || definition.indestructible) return;
@@ -145,7 +141,10 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
         const weaponDef = weaponUsed instanceof InventoryItem ? weaponUsed.definition : undefined;
         if (
             definition.impenetrable &&
-            !(weaponDef?.itemType === ItemType.Melee && weaponDef.piercingMultiplier !== undefined)
+            !(
+                (weaponDef?.itemType === ItemType.Melee && weaponDef.piercingMultiplier !== undefined) ||
+                source instanceof Obstacle
+            )
         ) {
             return;
         }
@@ -192,7 +191,7 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
                         const definition = object.definition;
                         switch (definition.operationStyle) {
                             case "slide": {
-                                //todo this ig?
+                                // todo this ig?
                                 break;
                             }
                             case "swivel":
@@ -214,42 +213,61 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
             // Calculate new scale & scale hitbox
             this.scale = this.health / this.maxHealth * (this.maxScale - definition.scale.destroy) + definition.scale.destroy;
             this.hitbox.scale(this.scale / oldScale);
-
-            // Punch doors to open
-            if (this.isDoor && source instanceof Player && weaponUsed instanceof MeleeItem) this.interact(source);
         }
     }
 
     canInteract(player?: Player): boolean {
-        return !this.dead && (this.door !== undefined || (this.definition.role === ObstacleSpecialRoles.Activatable && player?.activeItem.definition.idString === this.definition.requiredItem && !this.activated));
+        return !this.dead && (
+            (this.isDoor && (!this.door?.locked || player === undefined)) ||
+            (this.definition.role === ObstacleSpecialRoles.Activatable &&
+                (player?.activeItemDefinition.idString === this.definition.requiredItem || !this.definition.requiredItem) &&
+                !this.activated)
+        );
     }
 
     interact(player?: Player): void {
         if (!this.canInteract(player)) return;
 
-        switch (this.definition.role) {
-            case ObstacleSpecialRoles.Door:
+        const definition = this.definition;
+
+        switch (definition.role) {
+            case ObstacleSpecialRoles.Door: {
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                if (!(this.door!.open &&
-                    this.definition.role === ObstacleSpecialRoles.Door &&
-                    this.definition.openOnce)) {
+                if (!(this.door!.open && definition.openOnce)) {
                     this.toggleDoor(player);
                 }
                 break;
-            case ObstacleSpecialRoles.Activatable:
+            }
+            case ObstacleSpecialRoles.Activatable: {
                 this.activated = true;
 
-                if (this.parentBuilding && this.definition.interactType) {
+                if (this.parentBuilding && definition.interactType) {
                     for (const obstacle of this.parentBuilding.interactableObstacles) {
-                        if (obstacle.definition.idString === this.definition.interactType) {
-                            setTimeout(() => { obstacle.interact(); }, this.definition.interactDelay);
+                        if (obstacle.definition.idString === definition.interactType) {
+                            this.game.addTimeout(() => { obstacle.interact(); }, definition.interactDelay);
                         }
                     }
                 }
+
+                const replaceWith = definition.replaceWith;
+                if (replaceWith !== undefined) {
+                    this.game.addTimeout(() => {
+                        this.dead = true;
+                        this.collidable = false;
+                        this.game.fullDirtyObjects.add(this);
+
+                        this.game.map.generateObstacle(
+                            getRandomIdString(replaceWith.idString),
+                            this.position,
+                            this.rotation
+                        );
+                    }, replaceWith.delay);
+                }
                 break;
+            }
         }
 
-        this.game.partialDirtyObjects.add(this);
+        this.game.fullDirtyObjects.add(this);
     }
 
     toggleDoor(player?: Player): void {
@@ -308,30 +326,25 @@ export class Obstacle<Def extends ObstacleDefinition = ObstacleDefinition> exten
             this.door.offset = 0;
             this.hitbox = this.door.closedHitbox.clone();
         }
+        this.spawnHitbox = this.hitbox;
         this.game.grid.addObject(this);
     }
 
-    override serializePartial(stream: SuroiBitStream): void {
-        ObjectSerializations[ObjectCategory.Obstacle].serializePartial(stream, {
-            ...this,
-            fullUpdate: false
-        });
-    }
-
-    override serializeFull(stream: SuroiBitStream): void {
-        ObjectSerializations[ObjectCategory.Obstacle].serializeFull(stream, {
+    override get data(): Required<ObjectsNetData[ObjectCategory.Obstacle]> {
+        return {
             scale: this.scale,
             dead: this.dead,
-            activated: this.activated,
-            definition: this.definition,
-            door: this.door,
-            fullUpdate: true,
-            position: this.position,
-            variation: this.variation,
-            rotation: {
-                rotation: this.rotation,
-                orientation: this.rotation as Orientation
+            full: {
+                activated: this.activated,
+                definition: this.definition,
+                door: this.door,
+                position: this.position,
+                variation: this.variation,
+                rotation: {
+                    rotation: this.rotation,
+                    orientation: this.rotation as Orientation
+                }
             }
-        });
+        };
     }
 }

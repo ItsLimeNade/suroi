@@ -1,5 +1,6 @@
+import { intersection } from "greiner-hormann";
 import { PolygonHitbox, RectangleHitbox, type Hitbox } from "./hitbox";
-import { angleBetweenPoints, clamp, distanceSquared } from "./math";
+import { angleBetweenPoints, clamp } from "./math";
 import { SeededRandom } from "./random";
 import { v, vAdd, vClone, vRotate, vSub, type Vector } from "./vector";
 
@@ -16,17 +17,20 @@ export function jaggedRectangle(
 
     const points: Vector[] = [];
 
+    variation = variation / 2;
+    const getVariation = (): number => random.get(-variation, variation);
+
     for (let x = topLeft.x + spacing; x < topRight.x; x += spacing) {
-        points.push(v(x, topLeft.y + random.get(0, variation)));
+        points.push(v(x, topLeft.y + getVariation()));
     }
     for (let y = topRight.y + spacing; y < bottomRight.y; y += spacing) {
-        points.push(v(topRight.x + random.get(0, variation), y));
+        points.push(v(topRight.x + getVariation(), y));
     }
     for (let x = bottomRight.x - spacing; x > bottomLeft.x; x -= spacing) {
-        points.push(v(x, bottomRight.y + random.get(0, variation)));
+        points.push(v(x, bottomRight.y + getVariation()));
     }
     for (let y = bottomLeft.y - spacing; y > topLeft.y; y -= spacing) {
-        points.push(v(bottomLeft.x + random.get(0, variation), y));
+        points.push(v(bottomLeft.x + getVariation(), y));
     }
 
     return points;
@@ -89,7 +93,6 @@ export function generateTerrain(
             readonly water: PolygonHitbox
             readonly bank: PolygonHitbox
         }>
-        readonly riverSpawnHitboxes: PolygonHitbox[]
     } {
     // generate beach and grass
     const beachPadding = oceanSize + beachSize;
@@ -113,7 +116,6 @@ export function generateTerrain(
     const grass = new PolygonHitbox(...jaggedRectangle(grassHitbox, spacing, variation, random));
 
     const generatedRivers: ReturnType<typeof generateTerrain>["rivers"] = [];
-    const riverSpawnHitboxes: PolygonHitbox[] = [];
 
     for (const river of rivers) {
         // TODO Refactor this mess
@@ -130,24 +132,6 @@ export function generateTerrain(
                 )
             );
 
-            // TODO: ray cast to find an intersection position instead
-            const findClosestBeachPoint = (i: number): void => {
-                const pos = points[i];
-
-                let dist = Number.MAX_VALUE;
-                let closestPoint = v(0, 0);
-
-                for (const point of beach.points) {
-                    const newDist = distanceSquared(pos, point);
-                    if (newDist < dist) {
-                        closestPoint = point;
-                        dist = newDist;
-                    }
-                }
-
-                points[i] = closestPoint;
-            };
-            findClosestBeachPoint(0);
             // first loop, add points from start to end
             for (let i = 1, l = river.points.length - 1; i < l; i++) {
                 const prev = river.points[i - 1];
@@ -197,8 +181,7 @@ export function generateTerrain(
                     )
                 )
             );
-            findClosestBeachPoint(points.length - 2);
-            findClosestBeachPoint(points.length - 1);
+
             // second loop, same thing but reverse and with inverted point
             for (let l = river.points.length, i = l - 2; i > 0; i--) {
                 const prev = river.points[i - 1];
@@ -238,23 +221,20 @@ export function generateTerrain(
                     )
                 )
             );
-            findClosestBeachPoint(points.length - 1);
 
-            return new PolygonHitbox(...points);
+            return new PolygonHitbox(...intersection(points, beach.points)[0]);
         };
 
         generatedRivers.push({
             water: getRiverPolygon(river.width / 2),
             bank: getRiverPolygon(river.width / 2 + river.bankWidth)
         });
-        riverSpawnHitboxes.push(getRiverPolygon(river.width / 2 + river.bankWidth * 2));
     }
 
     return {
         beach,
         grass,
-        rivers: generatedRivers,
-        riverSpawnHitboxes
+        rivers: generatedRivers
     };
 }
 
@@ -297,41 +277,14 @@ export class TerrainGrid {
     }
 
     getFloor(position: Vector): string {
-        // assume if no floor was found at this position, it's in the ocean
-        let floorType = "water";
-
-        let hasFloor = false; // fixme hack to prevent rivers from slowing down the player when the port spawns on top
         const pos = this._roundToCells(position);
         for (const floor of this._grid[pos.x][pos.y]) {
-            if (floor.type !== "stone" && hasFloor) continue;
             if (floor.hitbox.isPointInside(position)) {
-                if (floor.type === "stone") return "stone";
-                floorType = floor.type;
-                hasFloor = true;
+                return floor.type;
             }
         }
-
-        return floorType;
-    }
-
-    intersectsHitbox(hitbox: RectangleHitbox): string {
-        let floorType = "water";
-
-        const rect = hitbox.toRectangle();
-        const min = this._roundToCells(rect.min);
-        const max = this._roundToCells(rect.max);
-
-        for (let x = min.x; x <= max.x; x++) {
-            for (let y = min.y; y <= max.y; y++) {
-                for (const floor of this._grid[x][y]) {
-                    if (floor.hitbox.collidesWith(hitbox)) {
-                        floorType = floor.type;
-                        break;
-                    }
-                }
-            }
-        }
-        return floorType;
+        // assume if no floor was found at this position, it's in the ocean
+        return "water";
     }
 
     private _roundToCells(vector: Vector): Vector {

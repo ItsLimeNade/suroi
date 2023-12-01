@@ -8,35 +8,42 @@
     left: 0;
     width: 100%;
     height: 100%;
+
+    // Darkens canvas (for Halloween mode)
+    /*canvas {
+        filter: brightness(0.65) saturate(0.85);
+        position: relative;
+        z-index: -1;
+    }*/
 }
 
 #btn-reload {
     position: absolute;
     bottom: 5px;
 
+    @media screen and (max-width: 1500px) {
+        bottom: 5px;
+        right: 240px;
+    }
+
     @media screen and (min-width: $screen_large) {
         width: 70px;
         height: 60px;
         bottom: 130px;
-        right: 10px;
+        right: 290px;
     }
 
-    @media screen and (max-width: 1500px) {
-        bottom: 10px;
-        right: 368px;
-    }
-
-    @media screen and (max-width: $screen_large) {
-        bottom: 69px;
-        right: 87px;
-    }
-
-    @media screen and (max-width: $screen_small) {
+    @media screen and (max-width: $screen_medium) {
         width: 50px;
         height: 40px;
         font-size: 20px;
-        bottom: 5px;
-        right: 132px;
+        bottom: 3px;
+        right: 240px;
+    }
+
+    @media screen and (max-width: $screen_small) {
+        bottom: 62px;
+        right: 3px;
     }
 
     z-index: 1000;
@@ -57,7 +64,7 @@
     top: 10px;
     left: 10px;
 
-    & > div {
+    &>div {
         margin-bottom: 10px;
     }
 
@@ -65,7 +72,7 @@
         top: 5px;
         left: 5px;
 
-        & > div {
+        &>div {
             margin-bottom: 5px;
         }
     }
@@ -331,16 +338,16 @@
     font-weight: 700;
     line-height: 1;
     padding: 2px 4px;
+    margin-right: 3px;
     white-space: nowrap;
 }
 
 #interact-text {
     font-size: 20px;
     @include text-shadow;
-    margin-left: 3px;
 }
 
-#interact-key.active + #interact-text {
+#interact-key.active+#interact-text {
     position: relative;
     top: 3px;
 }
@@ -368,6 +375,10 @@
         bottom: 60px;
         left: calc(50% + (48px / 2));
         width: 120px;
+    }
+
+    @media screen and (max-width: $screen_medium) {
+        display: none !important;
     }
 
     #weapon-clip-ammo {
@@ -416,6 +427,13 @@
         bottom: 5px;
 
         border-width: 5px;
+    }
+
+    @media screen and (max-width: $screen_medium) {
+        bottom: 3px;
+        left: unset;
+        right: 3px;
+        transform: none;
     }
 
     display: flex;
@@ -471,9 +489,17 @@
     }
 
     @keyframes flashing {
-        0% {background-color: #000000;}
-        50% {background-color: #ff0000;}
-        100% {background-color: #000000;}
+        0% {
+            background-color: #000000;
+        }
+
+        50% {
+            background-color: #ff0000;
+        }
+
+        100% {
+            background-color: #000000;
+        }
     }
 
 }
@@ -492,6 +518,12 @@
         width: 230px;
         height: 16px;
         bottom: 42px;
+    }
+
+    @media screen and (max-width: $screen_medium) {
+        left: unset;
+        right: 3px;
+        transform: none;
     }
 
     display: flex;
@@ -561,22 +593,47 @@
     }
 }
 
-#spectating-buttons-container {
-    position: absolute;
-    top: 150px;
-    left: 50%;
-    transform: translateX(-50%);
+#spectating-container {
+    align-items: center;
     display: flex;
+    flex-direction: column;
     gap: 10px;
+}
+
+#spectating-msg {
+    text-align: center;
+    display: flex;
+
+    font-weight: bold;
+    font-size: 30px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
 
     @media screen and (max-width: $screen_large) {
-        top: 100px;
+        font-size: 14px;
+    }
 
-        & > button {
+    #spectating-msg-player {
+        margin-left: 8px;
+    }
+}
+
+#spectating-buttons-container {
+    display: flex;
+    width: 225px;
+    gap: 10px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+
+    @media screen and (max-width: $screen_large) {
+        &>button {
             height: fit-content;
             padding: 8px 12px;
             font-size: 14px;
         }
+    }
+
+    #btn-spectate-kill-leader {
+        width: 100%;
     }
 }
 
@@ -616,38 +673,8 @@
     }
 }
 
-#spectating-msg {
-    text-align: center;
-    position: absolute;
-    top: 90px;
-    left: 50%;
-    transform: translateX(-50%);
-
-    @media screen and (max-width: $screen_large) {
-        top: 75px;
-    }
-
-    #spectating-msg-info {
-        font-weight: bold;
-        font-size: 30px;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
-
-        @media screen and (max-width: $screen_large) {
-            font-size: 14px;
-        }
-    }
-}
-
 #gas-msg {
     text-align: center;
-    position: absolute;
-    top: max(20%, 220px);
-    left: 50%;
-    transform: translateX(-50%);
-
-    @media screen and (max-width: $screen_large) {
-        top: 150px;
-    }
 
     #gas-msg-info {
         font-weight: bold;
@@ -663,11 +690,10 @@
 .inventory-container {
     display: flex;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
 
     @media screen and (max-width: $screen_large) {
-        flex-direction: column;
-        gap: 4px;
+        gap: 3px;
     }
 
     .inventory-slot {
@@ -678,20 +704,21 @@
         font-size: 15px;
 
         &.item-slot {
-            width: auto !important;
-            height: auto !important;
             padding: 0 8px 0 8px;
 
             @media screen and (max-width: $screen_large) {
-                padding: 3px 5px 3px 5px;
-                border-radius: 5px;
-                justify-content: left;
+                padding: 0 4px 0 4px;
             }
         }
 
         @media screen and (max-width: $screen_large) {
             width: 75px;
             height: 75px;
+        }
+
+        @media screen and (max-width: $screen_medium) {
+            width: 60px;
+            height: 60px;
         }
 
         position: relative;
@@ -796,6 +823,14 @@
         right: 5px;
     }
 
+    @media screen and (max-width: $screen_medium) {
+        right: 3px;
+        top: 50%;
+        transform: translateY(-50%);
+        flex-direction: column;
+        height: fit-content;
+    }
+
     .item-image {
         width: 90px;
         height: 90px;
@@ -803,6 +838,11 @@
         @media screen and (max-width: $screen_large) {
             width: 50px;
             height: 50px;
+        }
+
+        @media screen and (max-width: $screen_medium) {
+            width: 35px;
+            height: 35px;
         }
     }
 
@@ -820,15 +860,23 @@
     position: absolute;
     bottom: 10px;
     left: 10px;
+    display: flex;
+    gap: 5px;
+    flex-direction: column;
 
-    .inventory-container {
-        margin-top: 3px;
+    @media screen and (max-width: $screen_large) {
+        bottom: 3px;
+        left: 3px;
+        gap: 3px;
+    }
+
+    @media screen and (max-width: $screen_small) {
+        flex-direction: row-reverse;
     }
 
     .item-slot {
-        height: 40px !important;
-        width: 95px !important;
-        justify-content: start;
+        height: 40px;
+        width: 100px;
 
         &.full .item-count {
             color: $orange;
@@ -839,6 +887,18 @@
         &.has-item {
             opacity: 1;
         }
+
+        @media screen and (max-width: $screen_large) {
+            height: 25px;
+            width: 75px;
+            border-radius: 8px;
+        }
+
+        @media screen and (max-width: $screen_large) {
+            height: 25px;
+            width: 64px;
+            border-radius: 5px;
+        }
     }
 
     .item-count {
@@ -846,72 +906,39 @@
         margin-left: auto;
     }
 
-    #healing-items-container {
+    .inventory-container {
+        flex-direction: row;
+        justify-content: start;
+
+        @media screen and (max-width: $screen_small) {
+            flex-direction: column;
+        }
+
         .item-image {
+            width: 40px;
             height: 30px;
+            @include drop-shadow;
+
+            @media screen and (max-width: $screen_large) {
+                width: 30px;
+                height: 20px;
+            }
         }
 
         .inventory-slot .item-tooltip {
             width: max-content;
             max-width: 120px;
-            bottom: 50px;
-            left: -12.5%;
-        }
 
-        .inventory-slot:first-child .item-tooltip {
             left: 0;
-        }
-    }
+            bottom: 50px;
 
-    .item-image {
-        width: 40px;
-        height: 40px;
-        @include drop-shadow;
-
-        @media screen and (max-width: $screen_large) {
-            width: 30px;
-            height: 20px !important;
-        }
-    }
-
-    @media screen and (max-width: $screen_large) {
-        bottom: 5px;
-        left: 5px;
-        display: flex;
-        gap: 2px;
-
-        .inventory-container {
-            gap: 2px;
-        }
-
-        #healing-items-container {
-            order: 1;
-            margin-right: 3px;
-
-            .item-slot {
-                width: 62px !important;
+            @media screen and (max-width: $screen_large) {
+                bottom: 30px;
             }
 
-            .inventory-slot .item-tooltip {
+            @media screen and (max-width: $screen_small) {
+                left: 70px;
                 bottom: 0;
-                left: 74px !important;
-            }
-        }
-
-        .item-slot {
-            height: 25px !important;
-            width: 70px !important;
-            justify-content: start;
-        }
-    }
-
-    @media screen and (max-width: 550px) {
-        flex-direction: column;
-        gap: 0;
-
-        #healing-items-container {
-            .inventory-slot .item-tooltip {
-                left: 80px !important;
             }
         }
     }
@@ -928,13 +955,19 @@
     }
 
     @media screen and (max-width: $screen_large) {
+        bottom: 85px;
+        right: -37px;
+    }
+
+    @media screen and (max-width: $screen_medium) {
         flex-direction: row;
-        bottom: 5px;
-        right: 86px;
+        left: 5px;
+        bottom: 58px;
+        width: fit-content;
     }
 
     @media screen and (max-width: $screen_small) {
-        flex-direction: column;
+        bottom: 115px;
     }
 
     .inventory-slot {
@@ -948,15 +981,6 @@
         .item-tooltip {
             bottom: 85px;
             width: max-content;
-        }
-
-        @media screen and (max-width: $screen_small) {
-            width: 44px;
-            height: 44px !important;
-
-            .item-name {
-                display: none;
-            }
         }
 
         @media screen and (max-width: $screen_large) {
@@ -973,6 +997,15 @@
             }
         }
 
+        @media screen and (max-width: $screen_medium) {
+            width: 36px;
+            height: 36px !important;
+
+            .item-name {
+                display: none;
+            }
+        }
+
         .item-image {
             width: 45px;
             height: 45px;
@@ -983,17 +1016,30 @@
                 width: 32px;
                 height: 32px;
             }
+
+            @media screen and (max-width: $screen_medium) {
+                width: 28px;
+                height: 28px;
+            }
         }
     }
 }
 
-#scopes-container {
+#center-top-container {
     position: absolute;
     top: 10px;
     left: 50%;
     transform: translateX(-50%);
     align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+}
+
+#scopes-container {
     flex-direction: row !important;
+    align-items: center;
 
     .inventory-slot {
         justify-content: center;
@@ -1031,9 +1077,9 @@
                     height: 50px;
                 }
 
-                @media screen and (max-width: $screen_small) {
-                    width: 40px;
-                    height: 40px;
+                @media screen and (max-width: $screen_medium) {
+                    width: 35px;
+                    height: 35px;
                 }
             }
 
@@ -1050,9 +1096,9 @@
     width: 286px;
     height: 286px;
     //noinspection CssUnknownTarget
-    background-image: url("../../../public/img/misc/emote_wheel.svg");
+    background-image: url("/img/misc/emote_wheel.svg");
 
-    & > div {
+    &>div {
         width: 84px;
         height: 84px;
         position: absolute;
@@ -1217,13 +1263,7 @@
 }
 
 #joysticks-containers {
-    -webkit-touch-callout: none; /* iOS Safari */
-    -webkit-user-select: none; /* Safari */
-    -khtml-user-select: none; /* Konqueror HTML */
-    -moz-user-select: none; /* Old versions of Firefox */
-    -ms-user-select: none; /* Internet Explorer/Edge */
-    user-select: none; /* Non-prefixed version, currently
-                        ssupported by Chrome, Edge, Opera and Firefox */
+    user-select: none;
     width: 100vw;
     height: 100vh;
     position: absolute;

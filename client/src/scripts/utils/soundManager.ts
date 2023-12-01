@@ -1,4 +1,4 @@
-import { Howl, type HowlCallback, type HowlErrorCallback } from "howler";
+import { Howl } from "howler";
 import { Guns } from "../../../../common/src/definitions/guns";
 import { HealingItems } from "../../../../common/src/definitions/healingItems";
 import { Materials } from "../../../../common/src/definitions/obstacles";
@@ -10,6 +10,9 @@ import { type Game } from "../game";
 export interface Sound {
     readonly name: string
     readonly id: number
+    position?: Vector
+    readonly fallOff: number
+    readonly maxRange: number
 }
 
 export class SoundManager {
@@ -21,9 +24,11 @@ export class SoundManager {
 
     position = v(0, 0);
 
+    dynamicSounds = new Set<Sound>();
+
     constructor(game: Game) {
         this.game = game;
-        this.volume = game.console.getConfig("cv_sfx_volume");
+        this.volume = game.console.getBuiltInCVar("cv_sfx_volume");
         this.loadSounds();
     }
 
@@ -31,33 +36,59 @@ export class SoundManager {
         this.sounds[name] = new Howl({ src: `./${path}.mp3` }).load();
     }
 
-    play(name: string, position?: Vector, fallOff = 1, maxRange = 256, onend?: HowlCallback | HowlErrorCallback): Sound {
-        const sound = this.sounds[name];
+    play(
+        name: string,
+        position?: Vector,
+        fallOff = 1,
+        maxRange = 256,
+        dynamic?: boolean,
+        onend?: () => void
+    ): Sound {
+        const howl = this.sounds[name];
         let id = -1;
 
-        if (sound) {
-            let volume = this.volume;
-            let stereoNorm = 0;
-            if (position) {
-                const diff = vSub(this.position, position);
-                volume = (1 - clamp(Math.abs(vLength(diff) / maxRange), 0, 1)) ** (1 + fallOff * 2) * this.volume;
-                stereoNorm = clamp(diff.x / maxRange * -1.0, -1.0, 1.0);
+        const sound = {
+            name,
+            id,
+            position,
+            fallOff,
+            maxRange
+        };
+
+        if (howl) {
+            if (this.volume > 0) {
+                id = sound.id = howl.play();
+                howl.on("end", () => {
+                    if (sound.position && dynamic) this.dynamicSounds.delete(sound);
+                    onend?.();
+                }, id);
             }
 
-            if (volume > 0) {
-                id = sound.play();
-                sound.volume(volume, id);
-                sound.stereo(stereoNorm, id);
-                if (onend) sound.on("end", onend, id);
+            if (sound.position) {
+                if (dynamic) this.dynamicSounds.add(sound);
+                this.update(sound, howl);
             }
         } else {
             console.warn(`Sound with name '${name}' not found`);
         }
 
-        return {
-            name,
-            id
-        };
+        return sound;
+    }
+
+    update(sound?: Sound, howl?: Howl): void {
+        if (sound && howl) {
+            if (sound.position) {
+                const diff = vSub(this.position, sound.position);
+                howl.volume((1 - clamp(Math.abs(vLength(diff) / sound.maxRange), 0, 1)) ** (1 + sound.fallOff * 2) * this.volume, sound.id);
+                howl.stereo(clamp(diff.x / sound.maxRange * -1.0, -1.0, 1.0), sound.id);
+            }
+        } else {
+            for (const sound of this.dynamicSounds) {
+                const howl = this.sounds[sound.name];
+                if (!howl) continue;
+                this.update(sound, howl);
+            }
+        }
     }
 
     stop(sound: Sound): void {
@@ -97,6 +128,10 @@ export class SoundManager {
                 "audio/sfx/vault_door_open"
             ],
             [
+                "airdrop_crate_open",
+                "audio/sfx/airdrop_crate_open"
+            ],
+            [
                 "generator_starting",
                 "audio/sfx/generator_starting"
             ],
@@ -129,6 +164,18 @@ export class SoundManager {
                 "audio/sfx/pickup/scope_pickup"
             ],
             [
+                "helmet_pickup",
+                "audio/sfx/pickup/helmet_pickup"
+            ],
+            [
+                "vest_pickup",
+                "audio/sfx/pickup/vest_pickup"
+            ],
+            [
+                "backpack_pickup",
+                "audio/sfx/pickup/backpack_pickup"
+            ],
+            [
                 "gauze_pickup",
                 "audio/sfx/pickup/gauze_pickup"
             ],
@@ -147,6 +194,38 @@ export class SoundManager {
             [
                 "usas_explosion",
                 "audio/sfx/usas_explosion"
+            ],
+            [
+                "kill_leader_assigned",
+                "audio/sfx/kill_leader_assigned"
+            ],
+            [
+                "kill_leader_dead",
+                "audio/sfx/kill_leader_dead"
+            ],
+            [
+                "airdrop_ping",
+                "audio/sfx/airdrop/airdrop_ping"
+            ],
+            [
+                "airdrop_plane",
+                "audio/sfx/airdrop/airdrop_plane"
+            ],
+            [
+                "airdrop_fall",
+                "audio/sfx/airdrop/airdrop_fall"
+            ],
+            [
+                "airdrop_unlock",
+                "audio/sfx/airdrop/airdrop_unlock"
+            ],
+            [
+                "airdrop_land",
+                "audio/sfx/airdrop/airdrop_land"
+            ],
+            [
+                "airdrop_land_water",
+                "audio/sfx/airdrop/airdrop_land_water"
             ]
         ];
 
@@ -160,6 +239,7 @@ export class SoundManager {
             soundsToLoad.push([`${gun.idString}_fire`, `audio/sfx/weapons/${gun.idString}_fire`]);
             soundsToLoad.push([`${gun.idString}_switch`, `audio/sfx/weapons/${gun.idString}_switch`]);
             soundsToLoad.push([`${gun.idString}_reload`, `audio/sfx/weapons/${gun.idString}_reload`]);
+            if (gun.ballistics.lastShotFX) soundsToLoad.push([`${gun.idString}_last_shot`, `audio/sfx/weapons/${gun.idString}_last_shot`]);
         }
 
         for (const healingItem of HealingItems) {
@@ -172,7 +252,7 @@ export class SoundManager {
         }
 
         for (const [name, path] of soundsToLoad) {
-            this.load(name, path);
+            this.load(name, `./${path}`);
         }
     }
 }

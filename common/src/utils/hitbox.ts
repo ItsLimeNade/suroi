@@ -1,62 +1,68 @@
 import { type Orientation } from "../typings";
-import { addAdjust, circleCircleIntersection, circleCollision, type CollisionRecord, distanceSquared, distanceToCircle, distanceToRectangle, type IntersectionResponse, lineIntersectsCircle, lineIntersectsRect, rectangleCollision, rectangleDistanceToRectangle, rectCircleIntersection, rectRectCollision, transformRectangle, distance, rectPolyCollision } from "./math";
+import { addAdjust, circleCircleIntersection, circleCollision, type CollisionRecord, distanceSquared, distanceToCircle, distanceToRectangle, type IntersectionResponse, lineIntersectsCircle, lineIntersectsRect, rectangleCollision, rectangleDistanceToRectangle, rectCircleIntersection, rectRectCollision, transformRectangle, distance, lineIntersectsRect2, rectRectIntersection } from "./math";
 import { pickRandomInArray, randomFloat, randomPointInsideCircle } from "./random";
 import { v, vAdd, vClone, type Vector, vMul, vSub } from "./vector";
 
 export abstract class Hitbox {
     /**
-     * Checks if this `Hitbox` collides with another one
-     * @param that The other `Hitbox`
-     * @return True if both `Hitbox`es collide
+     * Checks if this {@link Hitbox} collides with another one
+     * @param that The other {@link Hitbox}
+     * @return `true` if both {@link Hitbox}es collide
      */
     abstract collidesWith(that: Hitbox): boolean;
     /**
-     * Resolve collision between `Hitbox`es.
-     * @param that The other `Hitbox`
+     * Resolve collision between {@link Hitbox}es.
+     * @param that The other {@link Hitbox}
      */
     abstract resolveCollision(that: Hitbox): void;
     /**
-     * Get the distance from this `Hitbox` from another `Hitbox`.
-     * @param that The other `Hitbox`
-     * @return a CollisionRecord with the distance and if both `Hitbox`es collide
+     * Get the distance from this {@link Hitbox} from another {@link Hitbox}.
+     * @param that The other {@link Hitbox}
+     * @return A {@link CollisionRecord} with the distance and if both {@link Hitbox}es collide
      */
     abstract distanceTo(that: Hitbox): CollisionRecord;
     /**
-     * Clone this `Hitbox`.
-     * @return a new `Hitbox` cloned from this one
+     * Clone this {@link Hitbox}.
+     * @return a new {@link Hitbox} cloned from this one
      */
     abstract clone(): Hitbox;
     /**
-     * Transform this `Hitbox` and returns a new `Hitbox`.
-     * NOTE: This doesn't change the initial `Hitbox`
-     * @param position The position to transform the `Hitbox` by
-     * @param scale The scale to transform the `Hitbox`
-     * @param orientation The orientation to transform the `Hitbox`
-     * @return A new `Hitbox` transformed by the parameters
+     * Transform this {@link Hitbox} and returns a new {@link Hitbox}.
+     * NOTE: This doesn't change the initial {@link Hitbox}
+     * @param position The position to transform the {@link Hitbox} by
+     * @param scale The scale to transform the {@link Hitbox}
+     * @param orientation The orientation to transform the {@link Hitbox}
+     * @return A new {@link Hitbox} transformed by the parameters
      */
     abstract transform(position: Vector, scale?: number, orientation?: Orientation): Hitbox;
     /**
-     * Scale this `Hitbox`.
-     * NOTE: This does change the initial `Hitbox`
+     * Scale this {@link Hitbox}.
+     * NOTE: This does change the initial {@link Hitbox}
      * @param scale The scale
      */
     abstract scale(scale: number): void;
     /**
-     * Check if a line intersects with this `Hitbox`.
+     * Check if a line intersects with this {@link Hitbox}.
      * @param a the start point of the line
      * @param b the end point of the line
      * @return An intersection response containing the intersection position and normal
      */
     abstract intersectsLine(a: Vector, b: Vector): IntersectionResponse;
     /**
-     * Get a random position inside this `Hitbox`.
-     * @return A Vector of a random position inside this `Hitbox`
+     * Get a random position inside this {@link Hitbox}.
+     * @return A Vector of a random position inside this {@link Hitbox}
      */
     abstract randomPoint(): Vector;
 
     abstract toRectangle(): RectangleHitbox;
 
     abstract isPointInside(point: Vector): boolean;
+
+    abstract getCenter(): Vector;
+
+    protected throwUnknownSubclassError(that: Hitbox): never {
+        throw new Error(`Invalid hitbox object (Received an instance of ${Object.getPrototypeOf(that)?.constructor?.name ?? "an unknown prototype"})`);
+    }
 }
 
 export class CircleHitbox extends Hitbox {
@@ -77,9 +83,11 @@ export class CircleHitbox extends Hitbox {
             return rectangleCollision(that.min, that.max, this.position, this.radius);
         } else if (that instanceof ComplexHitbox) {
             return that.collidesWith(this);
+        } else if (that instanceof PolygonHitbox) {
+            return that.collidesWith(this.toRectangle());
         }
 
-        throw new Error(`Invalid hitbox object (Received an instance of ${Object.getPrototypeOf(that)?.constructor?.name ?? "an unknown prototype"})`);
+        this.throwUnknownSubclassError(that);
     }
 
     override resolveCollision(that: Hitbox): void {
@@ -95,7 +103,7 @@ export class CircleHitbox extends Hitbox {
             }
         } else if (that instanceof ComplexHitbox) {
             for (const hitbox of that.hitboxes) {
-                this.resolveCollision(hitbox);
+                if (this.collidesWith(hitbox)) this.resolveCollision(hitbox);
             }
         }
     }
@@ -107,7 +115,7 @@ export class CircleHitbox extends Hitbox {
             return distanceToRectangle(that.min, that.max, this.position, this.radius);
         }
 
-        throw new Error(`Invalid hitbox object (Received an instance of ${Object.getPrototypeOf(that)?.constructor?.name ?? "an unknown prototype"})`);
+        this.throwUnknownSubclassError(that);
     }
 
     override clone(): CircleHitbox {
@@ -136,6 +144,10 @@ export class CircleHitbox extends Hitbox {
 
     override isPointInside(point: Vector): boolean {
         return distance(point, this.position) < this.radius;
+    }
+
+    override getCenter(): Vector {
+        return this.position;
     }
 }
 
@@ -179,17 +191,35 @@ export class RectangleHitbox extends Hitbox {
             return rectRectCollision(that.min, that.max, this.min, this.max);
         } else if (that instanceof ComplexHitbox) {
             return that.collidesWith(this);
+        } else if (that instanceof PolygonHitbox) {
+            return that.collidesWith(this);
         }
 
-        return false;
+        this.throwUnknownSubclassError(that);
     }
 
     override resolveCollision(that: Hitbox): void {
         if (that instanceof CircleHitbox) {
-            return that.resolveCollision(this);
+            const collision = rectCircleIntersection(this.min, this.max, that.position, that.radius);
+            if (collision) {
+                const rect = this.transform(vMul(collision.dir, collision.pen));
+                this.min = rect.min;
+                this.max = rect.max;
+            }
+        } else if (that instanceof RectangleHitbox) {
+            const collision = rectRectIntersection(this.min, this.max, that.min, that.max);
+            if (collision) {
+                const rect = this.transform(vMul(collision.dir, collision.pen));
+                this.min = rect.min;
+                this.max = rect.max;
+            }
+        } else if (that instanceof ComplexHitbox) {
+            for (const hitbox of that.hitboxes) {
+                if (this.collidesWith(hitbox)) this.resolveCollision(hitbox);
+            }
+        } else {
+            this.throwUnknownSubclassError(that);
         }
-
-        throw new Error("Not Implemented");
     }
 
     override distanceTo(that: Hitbox): CollisionRecord {
@@ -199,7 +229,7 @@ export class RectangleHitbox extends Hitbox {
             return rectangleDistanceToRectangle(that.min, that.max, this.min, this.max);
         }
 
-        throw new Error(`Invalid hitbox object (Received an instance of ${Object.getPrototypeOf(that)?.constructor?.name ?? "an unknown prototype"})`);
+        this.throwUnknownSubclassError(that);
     }
 
     override clone(): RectangleHitbox {
@@ -237,6 +267,13 @@ export class RectangleHitbox extends Hitbox {
     override isPointInside(point: Vector): boolean {
         return point.x > this.min.x && point.y > this.min.y && point.x < this.max.x && point.y < this.max.y;
     }
+
+    override getCenter(): Vector {
+        return {
+            x: this.min.x + ((this.max.x - this.min.x) / 2),
+            y: this.min.y + ((this.max.y - this.min.y) / 2)
+        };
+    }
 }
 
 export class ComplexHitbox extends Hitbox {
@@ -257,7 +294,7 @@ export class ComplexHitbox extends Hitbox {
             return that.resolveCollision(this);
         }
 
-        throw new Error("Not Implemented");
+        this.throwUnknownSubclassError(that);
     }
 
     override distanceTo(that: CircleHitbox | RectangleHitbox): CollisionRecord {
@@ -342,6 +379,10 @@ export class ComplexHitbox extends Hitbox {
         }
         return false;
     }
+
+    override getCenter(): Vector {
+        return this.toRectangle().getCenter();
+    }
 }
 
 export class PolygonHitbox extends Hitbox {
@@ -353,16 +394,25 @@ export class PolygonHitbox extends Hitbox {
     }
 
     override collidesWith(that: Hitbox): boolean {
-        if (that instanceof RectangleHitbox) return rectPolyCollision(that.min, that.max, this.points);
-        throw new Error("Not Implemented");
+        if (that instanceof RectangleHitbox) {
+            for (let i = 0; i < this.points.length; i++) {
+                const a = this.points[i];
+                const b = i === this.points.length - 1 ? this.points[0] : this.points[i + 1];
+                if (lineIntersectsRect2(b, a, that.min, that.max)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        this.throwUnknownSubclassError(that);
     }
 
-    override resolveCollision(_that: Hitbox): void {
-        throw new Error("Not Implemented");
+    override resolveCollision(that: Hitbox): void {
+        this.throwUnknownSubclassError(that);
     }
 
-    override distanceTo(_that: CircleHitbox | RectangleHitbox): CollisionRecord {
-        throw new Error("Not Implemented");
+    override distanceTo(that: CircleHitbox | RectangleHitbox): CollisionRecord {
+        this.throwUnknownSubclassError(that);
     }
 
     override clone(): PolygonHitbox {
@@ -382,7 +432,7 @@ export class PolygonHitbox extends Hitbox {
     }
 
     override intersectsLine(a: Vector, b: Vector): IntersectionResponse {
-        throw new Error("Not Implemented");
+        throw new Error("Operation not supported");
     }
 
     override randomPoint(): Vector {
@@ -426,5 +476,9 @@ export class PolygonHitbox extends Hitbox {
         }
 
         return inside;
+    }
+
+    override getCenter(): Vector {
+        return this.toRectangle().getCenter();
     }
 }

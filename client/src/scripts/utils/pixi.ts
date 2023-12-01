@@ -1,49 +1,37 @@
-import { BaseTexture, Sprite, Spritesheet, Texture, type ColorSource, type Graphics, type SpriteSheetJson } from "pixi.js";
-import { Buildings } from "../../../../common/src/definitions/buildings";
+import { Sprite, Texture, type ColorSource, type Graphics, Spritesheet, type ISpritesheetData } from "pixi.js";
 import { CircleHitbox, ComplexHitbox, RectangleHitbox, type Hitbox, PolygonHitbox } from "../../../../common/src/utils/hitbox";
-import { type Vector, vMul } from "../../../../common/src/utils/vector";
+import { v, type Vector, vMul } from "../../../../common/src/utils/vector";
 import { PIXI_SCALE } from "./constants";
 
-declare const ATLAS_HASH: string;
+import { atlases } from "virtual:spritesheets-jsons";
 
 const textures: Record<string, Texture> = {};
 
-async function loadImage(key: string, path: string): Promise<void> {
-    console.log(`Loading image ${path}`);
-    textures[key] = await Texture.fromURL(path);
-}
+export async function loadTextures(): Promise<void> {
+    const promises: Array<Promise<void>> = [];
 
-// TODO: refactor to use pixi loader instead of this mess
-// pixi loader should be faster and will load stuff async
-// rn it needs to use await to make sure everything is loaded before the play button is enabled
-export async function loadAtlases(): Promise<void> {
-    for (const atlas of ["main"]) {
-        const path = `img/atlases/${atlas}.${ATLAS_HASH}`;
-        const spritesheetData = await (await fetch(`./${path}.json`)).json() as SpriteSheetJson;
+    for (const atlas of atlases as ISpritesheetData[]) {
+        const image = atlas.meta.image as string;
 
-        console.log(`Loading atlas: ${location.toString()}${path}.png`);
+        console.log(`Loading atlas ${location.origin}/${image}`);
 
-        const spriteSheet = new Spritesheet(BaseTexture.from(`./${path}.png`), spritesheetData);
+        promises.push(new Promise<void>((resolve) => {
+            Texture.fromURL(image).then((texture) => {
+                const spriteSheet = new Spritesheet(texture, atlas);
 
-        await spriteSheet.parse();
+                spriteSheet.parse().then((sheetTextures) => {
+                    for (const frame in sheetTextures) {
+                        textures[frame] = sheetTextures[frame];
+                    }
+                    console.log(`Atlas ${image} loaded.`);
 
-        for (const frame in spriteSheet.textures) {
-            const frameName = frame.replace(/(\.svg|\.png)/, "");
-            if (frameName in textures) console.warn(`Duplicated atlas frame key: ${frame}`);
-            textures[frameName] = spriteSheet.textures[frame];
-        }
+                    resolve();
+                }).catch(console.error);
+            }).catch(console.error);
+        }));
     }
 
-    for (const building of Buildings.definitions) {
-        for (const image of building.floorImages ?? []) {
-            await loadImage(image.key, require(`/public/img/buildings/${image.key}.svg`));
-        }
-
-        for (const image of building.ceilingImages ?? []) {
-            await loadImage(image.key, require(`/public/img/buildings/${image.key}.svg`));
-            if (image.residue) await loadImage(image.residue, require(`/public/img/buildings/${image.residue}.svg`));
-        }
-    }
+    await Promise.all(promises);
 }
 
 export class SuroiSprite extends Sprite {
@@ -91,6 +79,11 @@ export class SuroiSprite extends Sprite {
 
     setRotation(rotation?: number): SuroiSprite {
         this.rotation = rotation ?? 0;
+        return this;
+    }
+
+    setScale(scale?: number): SuroiSprite {
+        this.scale = v(scale ?? 1, scale ?? 1);
         return this;
     }
 

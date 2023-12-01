@@ -1,14 +1,13 @@
 import { type Orientation, type Variation } from "../typings";
 import { CircleHitbox, ComplexHitbox, RectangleHitbox, type Hitbox } from "../utils/hitbox";
 import { type FloorTypes } from "../utils/mapUtils";
-import { ObjectDefinitions, type ObjectDefinition } from "../utils/objectDefinitions";
-import { randomBoolean, weightedRandom } from "../utils/random";
+import { ObjectDefinitions, type ObjectDefinition, type ReferenceTo, MapObjectSpawnMode } from "../utils/objectDefinitions";
 import { v, type Vector } from "../utils/vector";
-import { type RotationMode } from "./obstacles";
+import { type ObstacleDefinition, type RotationMode } from "./obstacles";
 import { ZIndexes } from "../constants";
 
 interface BuildingObstacle {
-    readonly idString: string
+    readonly idString: ReferenceTo<ObstacleDefinition> | Record<ReferenceTo<ObstacleDefinition>, number>
     readonly position: Vector
     readonly rotation?: number
     readonly variation?: Variation
@@ -22,7 +21,7 @@ interface LootSpawner {
 }
 
 interface SubBuilding {
-    readonly idString: string
+    readonly idString: ReferenceTo<BuildingDefinition> | Record<ReferenceTo<BuildingDefinition>, number>
     readonly position: Vector
     readonly orientation?: Orientation
 }
@@ -30,15 +29,16 @@ interface SubBuilding {
 interface BuildingDecal {
     readonly id: string
     readonly position: Vector
-    readonly rotation?: Orientation
+    readonly orientation?: Orientation
     readonly scale?: number
 }
 
 export interface BuildingDefinition extends ObjectDefinition {
     readonly spawnHitbox: Hitbox
-    readonly ceilingHitbox?: Hitbox
     readonly scopeHitbox?: Hitbox
+    readonly ceilingHitbox?: Hitbox
     readonly hideOnMap?: boolean
+    readonly spawnMode?: MapObjectSpawnMode
 
     readonly obstacles?: BuildingObstacle[]
     readonly lootSpawners?: LootSpawner[]
@@ -48,6 +48,7 @@ export interface BuildingDefinition extends ObjectDefinition {
     readonly floorImages?: Array<{
         readonly key: string
         readonly position: Vector
+        readonly rotation?: number
         readonly tint?: number
     }>
 
@@ -77,15 +78,12 @@ export interface BuildingDefinition extends ObjectDefinition {
 
 function makeContainer(id: number, tint: number, wallsID: number, open: "open2" | "open1" | "closed", damaged?: boolean): BuildingDefinition {
     let spawnHitbox: Hitbox;
-    let ceilingHitbox: Hitbox | undefined;
     switch (open) {
         case "open2":
             spawnHitbox = RectangleHitbox.fromRect(16, 39.9);
-            ceilingHitbox = RectangleHitbox.fromRect(14, 37.9);
             break;
         case "open1":
-            spawnHitbox = RectangleHitbox.fromRect(16, 34.9, v(0, 7));
-            ceilingHitbox = RectangleHitbox.fromRect(14, 32.9, v(0, 5));
+            spawnHitbox = RectangleHitbox.fromRect(16, 34.9, v(0, 2));
             break;
         case "closed":
         default:
@@ -97,8 +95,7 @@ function makeContainer(id: number, tint: number, wallsID: number, open: "open2" 
         idString: `container_${id}`,
         name: `Container ${id}`,
         spawnHitbox,
-        ceilingHitbox,
-        scopeHitbox: RectangleHitbox.fromRect(13.9, 27.9),
+        scopeHitbox: RectangleHitbox.fromRect(13.9, 27),
         ceilingImages: [{
             key: `container_ceiling_${open}${damaged ? "_damaged" : ""}`,
             position: v(0, 0),
@@ -133,12 +130,28 @@ export const ContainerTints = {
     Yellow: 0xcccc00
 };
 
+const randomContainer1 = {
+    container_1: 1,
+    container_2: 2,
+    container_3: 3,
+    container_4: 4,
+    container_5: 3,
+    container_6: 4,
+    container_7: 3,
+    container_8: 4,
+    container_10: 3
+};
+
+const randomContainer2 = {
+    ...randomContainer1,
+    container_11: 7
+};
+
 export const Buildings = new ObjectDefinitions<BuildingDefinition>([
     {
         idString: "porta_potty",
         name: "Porta Potty",
         spawnHitbox: RectangleHitbox.fromRect(20, 32),
-        ceilingHitbox: RectangleHitbox.fromRect(14, 18),
         scopeHitbox: RectangleHitbox.fromRect(14, 18),
         floorImages: [{
             key: "porta_potty_floor",
@@ -158,8 +171,9 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         ],
         obstacles: [
             {
-                get idString() {
-                    return weightedRandom(["porta_potty_toilet_open", "porta_potty_toilet_closed"], [0.7, 0.3]);
+                idString: {
+                    porta_potty_toilet_open: 0.7,
+                    porta_potty_toilet_closed: 0.3
                 },
                 position: v(0, -5),
                 rotation: 0
@@ -198,14 +212,6 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
             RectangleHitbox.fromRect(41, 51, v(31.50, -14.50)), // Garage
             RectangleHitbox.fromRect(68, 68, v(-18, -6)), // Main House
             RectangleHitbox.fromRect(28, 17, v(-31, 31.50)) // Doorstep
-        ),
-        ceilingHitbox: new ComplexHitbox(
-            RectangleHitbox.fromRect(34.50, 42, v(29.25, -15.50)), // Garage
-            RectangleHitbox.fromRect(60.50, 56, v(-17.25, -8.50)), // Main House
-            RectangleHitbox.fromRect(21, 16, v(-31.50, 27)), // Doorstep
-            new CircleHitbox(5, v(-1.5, -37)), // Living room window
-            new CircleHitbox(5, v(-28.5, -37)), // Bedroom window
-            new CircleHitbox(5, v(-47.5, -8.5)) // Dining Room Window
         ),
         scopeHitbox: new ComplexHitbox(
             RectangleHitbox.fromRect(34.50, 42, v(29.25, -15.50)), // Garage
@@ -283,8 +289,9 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 rotation: 0
             },
             {
-                get idString() {
-                    return weightedRandom(["toilet", "used_toilet"], [0.7, 0.3]);
+                idString: {
+                    toilet: 0.7,
+                    used_toilet: 0.3
                 },
                 position: v(7, 14.4),
                 rotation: 2
@@ -453,7 +460,6 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         idString: "warehouse",
         name: "Warehouse",
         spawnHitbox: RectangleHitbox.fromRect(60, 88),
-        ceilingHitbox: RectangleHitbox.fromRect(40, 80),
         scopeHitbox: RectangleHitbox.fromRect(40, 70),
         floorImages: [{
             key: "warehouse_floor",
@@ -471,34 +477,14 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         ],
         obstacles: [
             {
-                idString: "warehouse_wall_1",
-                position: v(-20, 0),
-                rotation: 1
-            },
-            {
-                idString: "warehouse_wall_1",
-                position: v(20, 0),
-                rotation: 1
-            },
-            {
-                idString: "warehouse_wall_2",
-                position: v(14, -34.4),
+                idString: "warehouse_walls",
+                position: v(-19.8, 0),
                 rotation: 0
             },
             {
-                idString: "warehouse_wall_2",
-                position: v(-14, -34.4),
-                rotation: 0
-            },
-            {
-                idString: "warehouse_wall_2",
-                position: v(14, 34.4),
-                rotation: 0
-            },
-            {
-                idString: "warehouse_wall_2",
-                position: v(-14, 34.4),
-                rotation: 0
+                idString: "warehouse_walls",
+                position: v(19.8, 0),
+                rotation: 2
             },
             {
                 idString: "regular_crate",
@@ -509,9 +495,9 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 position: v(-14, -28.5)
             },
             {
-                // TODO: better way of adding random obstacles
-                get idString() {
-                    return weightedRandom(["regular_crate", "flint_crate"], [0.7, 0.3]);
+                idString: {
+                    regular_crate: 0.7,
+                    flint_crate: 0.3
                 },
                 position: v(-14, 28.5)
             },
@@ -521,7 +507,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
             },
             {
                 idString: "metal_shelf",
-                position: v(-16, 0),
+                position: v(-15.8, 0),
                 rotation: 1
             },
             {
@@ -541,7 +527,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
             },
             {
                 idString: "metal_shelf",
-                position: v(16, 0),
+                position: v(15.8, 0),
                 rotation: 1
             },
             {
@@ -571,105 +557,53 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
     {
         idString: "port_warehouse",
         name: "Port Warehouse",
-        spawnHitbox: RectangleHitbox.fromRect(70.00, 130.00),
-        ceilingHitbox: new ComplexHitbox(
-            RectangleHitbox.fromRect(60.00, 120.00),
-            RectangleHitbox.fromRect(12, 30, v(29.3, -30.3)),
-            RectangleHitbox.fromRect(12, 30, v(29.3, 30.4))
-        ),
-        scopeHitbox: RectangleHitbox.fromRect(55.00, 115.00),
-        floorImages: [{
-            key: "port_warehouse_floor",
-            position: v(0, 0)
-        }],
+        spawnHitbox: RectangleHitbox.fromRect(70, 130),
+        scopeHitbox: RectangleHitbox.fromRect(58, 115),
+        floorImages: [
+            {
+                key: "port_warehouse_floor",
+                position: v(0, -30.2)
+            },
+            {
+                key: "port_warehouse_floor",
+                position: v(0, 30.2),
+                rotation: Math.PI
+            }
+        ],
         ceilingImages: [{
             key: "port_warehouse_ceiling",
             position: v(0, 0)
         }],
         obstacles: [
             {
-                idString: "port_warehouse_wall_short",
-                position: v(29.3, -51),
-                rotation: 0,
-                scale: 1.076
+                idString: "port_warehouse_walls",
+                position: v(0, -30),
+                rotation: 0
             },
             {
-                idString: "port_warehouse_wall_short",
-                position: v(-29.3, -51),
-                rotation: 0,
-                scale: 1.076
-            },
-            {
-                idString: "port_warehouse_windows",
-                position: v(-29.3, -30.3),
-                rotation: 0,
-                scale: 1.076
-            },
-            // {
-            //     id: "port_warehouse_windows",
-            //     position: v(29.3, -30.3),
-            //     rotation: 0,
-            //     scale: 1.076
-            // },
-            {
-                idString: "port_warehouse_wall_long",
-                position: v(29.3, 0),
-                rotation: 0,
-                scale: 1.076
-            },
-            {
-                idString: "port_warehouse_wall_long",
-                position: v(-29.3, 0),
-                rotation: 0,
-                scale: 1.076
-            },
-            {
-                idString: "port_warehouse_wall_short",
-                position: v(20.4, 16.3),
-                rotation: 1,
-                scale: 1.076
-            },
-            {
-                idString: "port_warehouse_wall_short",
-                position: v(-20.4, 16.3),
-                rotation: 1,
-                scale: 1.076
+                idString: "port_warehouse_walls",
+                position: v(0, 30),
+                rotation: 2
             },
             {
                 idString: "port_warehouse_windows",
-                position: v(-29.3, 30.4),
-                rotation: 0,
-                scale: 1.076
+                position: v(-29.3, -31.9),
+                rotation: 0
             },
-            // {
-            //     id: "port_warehouse_windows",
-            //     position: v(29.3, 30.4),
-            //     rotation: 0,
-            //     scale: 1.076
-            // },
             {
-                idString: "port_warehouse_wall_short",
-                position: v(29.3, 51),
-                rotation: 0,
-                scale: 1.076
+                idString: "port_warehouse_windows",
+                position: v(-29.3, 31.9),
+                rotation: 0
             },
             {
                 idString: "port_warehouse_wall_short",
-                position: v(-29.3, 51),
-                rotation: 0,
-                scale: 1.076
+                position: v(21, 16.3),
+                rotation: 1
             },
             {
-                idString: "port_warehouse_wall_superlong",
-                position: v(0, -59.5),
-                rotation: 1,
-                scale: 1.076
-            },
-            {
-                idString: "port_warehouse_wall_superlong",
-                position: v(0, 59.5),
-                rotation: 1,
-                scale: 1.076
+                idString: "port_warehouse_wall_short",
+                position: v(-21, 16.3),
+                rotation: 1
             },
             {
                 idString: "super_barrel",
@@ -702,9 +636,9 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 rotation: 2
             },
             {
-                // TODO: better way of adding random obstacles
-                get idString() {
-                    return weightedRandom(["regular_crate", "flint_crate"], [0.3, 1]);
+                idString: {
+                    regular_crate: 0.3,
+                    flint_crate: 1
                 },
                 position: v(-11, 50)
             },
@@ -722,7 +656,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
             },
             {
                 idString: "barrel",
-                position: v(25, 52)
+                position: v(23, 52)
             },
             {
                 idString: "barrel",
@@ -749,12 +683,6 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         scopeHitbox: new ComplexHitbox(
             RectangleHitbox.fromRect(33.50, 72, v(-32.75, 0)),
             RectangleHitbox.fromRect(65.50, 29.50, v(16.75, -21.25))
-        ),
-        ceilingHitbox: new ComplexHitbox(
-            RectangleHitbox.fromRect(33.50, 72, v(-32.75, 0)),
-            RectangleHitbox.fromRect(65.50, 29.50, v(16.75, -21.25)),
-            RectangleHitbox.fromRect(13, 7, v(28.50, -3.50)), // door
-            new CircleHitbox(5, v(-16, 18.5)) // window
         ),
         floorImages: [
             {
@@ -819,7 +747,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 rotation: 3
             },
             {
-                idString: "gun_mount",
+                idString: { gun_mount_mcx_spear: 0.99, gun_mount_stoner_63: 0.01 },
                 position: v(-46.8, 28),
                 rotation: 1
             },
@@ -850,15 +778,11 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 position: v(-39, -25.59)
             },
             {
-                get idString(): string {
-                    return randomBoolean() ? "barrel" : "super_barrel";
-                },
+                idString: { barrel: 1, super_barrel: 1 },
                 position: v(-26, -30)
             },
             {
-                get idString(): string {
-                    return randomBoolean() ? "barrel" : "super_barrel";
-                },
+                idString: { barrel: 1, super_barrel: 1 },
                 position: v(-21.5, 4)
             },
             {
@@ -956,9 +880,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 position: v(85.25, -33.5)
             },
             {
-                get idString(): string {
-                    return randomBoolean() ? "barrel" : "super_barrel";
-                },
+                idString: { barrel: 1, super_barrel: 1 },
                 position: v(83, -25)
             },
             {
@@ -1042,14 +964,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         idString: "small_house",
         name: "Small House",
         spawnHitbox: RectangleHitbox.fromRect(80, 80),
-        ceilingHitbox: new ComplexHitbox(
-            RectangleHitbox.fromRect(62, 58, v(0, -0.3)),
-            new CircleHitbox(5, v(-7.2, -29.5)),
-            new CircleHitbox(5, v(-31, 7.5)),
-            new CircleHitbox(5, v(31, 15.4)),
-            new CircleHitbox(5, v(31, -15.9))
-        ),
-        scopeHitbox: RectangleHitbox.fromRect(62, 58, v(0, -0.3)),
+        scopeHitbox: RectangleHitbox.fromRect(60, 56),
         floorImages: [{
             key: "house_floor_small",
             position: v(0, 0)
@@ -1112,7 +1027,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 rotation: 2
             }, // Bathroom Toilet
             {
-                idString: "toilet",
+                idString: { toilet: 2, used_toilet: 1 },
                 position: v(3.6, 23.5),
                 rotation: 2
             }, // Front Door
@@ -1236,30 +1151,26 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         ],
         ceilingZIndex: ZIndexes.BuildingsCeiling + 1, // makes the crane ceiling render above container ceilings
         obstacles: [
-            { idString: "crane_base_end", position: v(-31.6, -106.15), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(-31.55, -87.3), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(-31.55, -35.6), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(-31.55, 32), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(-31.55, 83.7), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_end", position: v(-31.6, 106.15), rotation: 0, scale: 1.07 },
+            { idString: "crane_base_end", position: v(-31.6, -106.15), rotation: 0 },
+            { idString: "crane_base_part", position: v(-31.55, -87.3), rotation: 0 },
+            { idString: "crane_base_part", position: v(-31.55, -35.6), rotation: 0 },
+            { idString: "crane_base_part", position: v(-31.55, 32), rotation: 0 },
+            { idString: "crane_base_part", position: v(-31.55, 83.7), rotation: 0 },
+            { idString: "crane_base_end", position: v(-31.6, 106.15), rotation: 0 },
 
-            { idString: "crane_base_end", position: v(31.5, -106.15), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(31.55, -87.3), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(31.55, -35.6), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(31.55, 32), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_part", position: v(31.55, 83.7), rotation: 0, scale: 1.07 },
-            { idString: "crane_base_end", position: v(31.5, 106.15), rotation: 0, scale: 1.07 }
+            { idString: "crane_base_end", position: v(31.5, -106.15), rotation: 0 },
+            { idString: "crane_base_part", position: v(31.55, -87.3), rotation: 0 },
+            { idString: "crane_base_part", position: v(31.55, -35.6), rotation: 0 },
+            { idString: "crane_base_part", position: v(31.55, 32), rotation: 0 },
+            { idString: "crane_base_part", position: v(31.55, 83.7), rotation: 0 },
+            { idString: "crane_base_end", position: v(31.5, 106.15), rotation: 0 }
         ]
     },
     {
         idString: "port_shed",
         name: "Port Shed",
         spawnHitbox: RectangleHitbox.fromRect(27, 37, v(-0.8, 0)),
-        ceilingHitbox: new ComplexHitbox(
-            RectangleHitbox.fromRect(20, 28.1, v(-0.8, -1)),
-            new CircleHitbox(5, v(9.45, -2.6))
-        ),
-        scopeHitbox: RectangleHitbox.fromRect(20, 28.1, v(-0.8, -1)),
+        scopeHitbox: RectangleHitbox.fromRect(20, 27.5, v(-0.8, -1.5)),
         floorImages: [{
             key: "port_shed_floor",
             position: v(0, 0)
@@ -1321,21 +1232,10 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         idString: "ship",
         name: "Ship",
         spawnHitbox: RectangleHitbox.fromRect(110, 300, v(0, 0)),
-        ceilingHitbox: new ComplexHitbox(
-            RectangleHitbox.fromRect(45.5, 39, v(9.5, -70.5)),
-            RectangleHitbox.fromRect(10, 13, v(35, -73)),
-            RectangleHitbox.fromRect(10, 19, v(-17, -63)),
-
-            RectangleHitbox.fromRect(60, 25, v(8, 93.2)),
-
-            new CircleHitbox(5, v(-17.3, -50.3)),
-            new CircleHitbox(5, v(-7.4, -50.3)),
-            new CircleHitbox(5, v(5.4, -50.3)),
-            new CircleHitbox(5, v(15.3, -50.3))
-        ),
         scopeHitbox: new ComplexHitbox(
-            RectangleHitbox.fromRect(45.5, 39, v(9.5, -70.5)),
-            RectangleHitbox.fromRect(60, 25, v(8, 93.2))
+            RectangleHitbox.fromRect(44, 38, v(9.5, -70.5)),
+            RectangleHitbox.fromRect(10, 15, v(-17, -60)),
+            RectangleHitbox.fromRect(50, 24, v(8, 93.2))
         ),
         floorImages: [
             {
@@ -1360,109 +1260,98 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
         floors: [
             {
                 type: "stone",
-                hitbox: RectangleHitbox.fromRect(82, 260, v(8.5, 0))
+                hitbox: RectangleHitbox.fromRect(82, 220, v(8.5, -20))
             },
             {
                 type: "stone",
+                hitbox: RectangleHitbox.fromRect(54, 20, v(8.5, 95))
+            },
+            {
+                type: "metal",
                 hitbox: RectangleHitbox.fromRect(20, 10.8, v(-40.6, -33.7))
             },
             {
-                type: "stone",
+                type: "metal",
                 hitbox: RectangleHitbox.fromRect(20, 10.8, v(-40.6, 43))
             }
         ],
         obstacles: [
             // Tango room
-            { idString: "vault_door", position: v(7.55, 81.5), rotation: 0, scale: 1.07 },
-            { get idString() { return randomBoolean() ? "tango_crate" : "aegis_crate"; }, position: v(9, 93.5), rotation: 0, scale: 0.90 },
+            { idString: "vault_door", position: v(7.45, 81.5), rotation: 0 },
+            { idString: { tango_crate: 1, aegis_crate: 1 }, position: v(9, 93.5), rotation: 0 },
             { idString: "super_barrel", position: v(-12, 89) },
             { idString: "box", position: v(28.5, 87) },
-            { idString: "box", position: v(31.5, 92) },
-            { idString: "box", position: v(-12, 101) },
+            { idString: "box", position: v(30, 93) },
+            { idString: "box", position: v(-12, 99) },
 
             // Main hitbox
             { idString: "ship", position: v(0, 0), rotation: 0 },
 
-            { idString: "ship_thing_1", position: v(-14, -111), rotation: 0, scale: 1.07 },
-            { idString: "generator", position: v(23, 75), rotation: 0, scale: 1.07 },
+            { idString: "ship_thing_1", position: v(-14, -111), rotation: 0 },
+            { idString: "generator", position: v(23, 75), rotation: 0 },
             { idString: "barrel", position: v(24, 66) },
             {
-                get idString() {
-                    return weightedRandom(["barrel", "super_barrel"], [1, 1]);
-                },
+                idString: { barrel: 1, super_barrel: 1 },
                 position: v(21, 58)
             },
             { idString: "regular_crate", position: v(-6, 73) },
             { idString: "regular_crate", position: v(-4, 61) },
 
             // Captain's cabin
-            { idString: "panel_with_a_button", position: v(24.8, -55.9), rotation: 2 },
-            { idString: "panel_without_button_small", position: v(15, -55.9), rotation: 2 },
-            { idString: "panel_without_button", position: v(5.5, -55.9), rotation: 2 },
-            { idString: "regular_crate", position: v(-7, -83) },
-            { idString: "barrel", position: v(2, -84) },
-            { idString: "bookshelf", position: v(22, -85), rotation: 2 },
+            { idString: "panel_with_a_button", position: v(24, -57), rotation: 2 },
+            { idString: "panel_without_button_small", position: v(14.5, -57), rotation: 2 },
+            { idString: "panel_without_button", position: v(5, -57), rotation: 2 },
+            { idString: "regular_crate", position: v(-7, -84) },
+            { idString: "barrel", position: v(2, -85) },
+            { idString: "bookshelf", position: v(23.5, -86.5), rotation: 2 },
 
-            { idString: "ship_cabin_windows", position: v(3.9, -51), rotation: 1, scale: 1.07 },
-            { idString: "ship_cabin_window", position: v(-17.3, -50.3), rotation: 1, scale: 1.07 },
-            { idString: "ship_cabin_window", position: v(-7.4, -50.3), rotation: 1, scale: 1.07 },
-            { idString: "ship_cabin_window", position: v(5.4, -50.3), rotation: 1, scale: 1.07 },
-            { idString: "ship_cabin_window", position: v(15.3, -50.3), rotation: 1, scale: 1.07 },
-            { idString: "ship_small_wall", position: v(-23.6, -58.6), rotation: 0, scale: 1.07 },
-            { idString: "ship_medium_wall", position: v(31.5, -60.5), rotation: 0, scale: 1.07 },
-            { idString: "ship_exterior_long_wall", position: v(41, -65.6), rotation: 0, scale: 1.07 },
-            { idString: "ship_exterior_small_wall", position: v(37.15, -82), rotation: 1, scale: 1.07 },
-            { idString: "ship_tiny_wall", position: v(31.5, -84.8), rotation: 0, scale: 1.07 },
-            { idString: "ship_long_wall", position: v(9.2, -89.5), rotation: 1, scale: 1.07 },
-            { idString: "ship_medium_wall2", position: v(-13.1, -77.8), rotation: 0, scale: 1.07 },
-            { idString: "ship_exterior_medium_wall", position: v(-23.6, -77.8), rotation: 0, scale: 1.07 }
+            { idString: "ship_cabin_window", position: v(-16, -50.5), rotation: 1 },
+            { idString: "ship_cabin_window", position: v(-6, -50.5), rotation: 1 },
+            { idString: "ship_cabin_window", position: v(7, -50.5), rotation: 1 },
+            { idString: "ship_cabin_window", position: v(18, -50.5), rotation: 1 }
 
         ],
         subBuildings: [
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
+                idString: randomContainer1,
                 position: v(19, -64),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
-                position: v(-15, 20),
-                orientation: 0
+                idString: randomContainer1,
+                position: v(-15, 20)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
+                idString: randomContainer1,
                 position: v(-16, -20),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
+                idString: randomContainer1,
                 position: v(-31, -20),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
-                position: v(16, -22),
-                orientation: 0
+                idString: randomContainer1,
+                position: v(16, -22)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
+                idString: randomContainer1,
                 position: v(15, 22),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
+                idString: randomContainer1,
                 position: v(-1, 22),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
-                position: v(16, -110),
-                orientation: 0
+                idString: randomContainer1,
+                position: v(16, -110)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 10 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3]); },
-                position: v(31, -110),
-                orientation: 0
+                idString: randomContainer1,
+                position: v(31, -110)
             }
         ],
         lootSpawners: [{
@@ -1473,7 +1362,7 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
     {
         idString: "port",
         name: "Port",
-        spawnHitbox: RectangleHitbox.fromRect(430, 425, v(50, 0)),
+        spawnHitbox: RectangleHitbox.fromRect(315, 425, v(0, 0)),
         groundGraphics: [
             { color: 0x626262, hitbox: RectangleHitbox.fromRect(315, 425, v(0, 0)) },
             { color: 0x525252, hitbox: RectangleHitbox.fromRect(310, 420, v(0, 0)) },
@@ -1523,191 +1412,167 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
             // Group 1
             {
                 id: "container_mark",
-                position: v(37.52, -184.72),
-                rotation: 0
+                position: v(37.52, -184.72)
             },
             {
                 id: "container_mark",
-                position: v(51.98, -184.73),
-                rotation: 0
+                position: v(51.98, -184.73)
             },
             {
                 id: "container_mark",
-                position: v(37.83, -157.25),
-                rotation: 0
+                position: v(37.83, -157.25)
             },
             {
                 id: "container_mark",
-                position: v(52.23, -157.25),
-                rotation: 0
+                position: v(52.23, -157.25)
             },
             // Group 2
             {
                 id: "container_mark",
-                position: v(98.38, -184.09),
-                rotation: 0
+                position: v(98.38, -184.09)
             },
             {
                 id: "container_mark",
-                position: v(112.84, -184.09),
-                rotation: 0
+                position: v(112.84, -184.09)
             },
             {
                 id: "container_mark",
-                position: v(98.69, -156.62),
-                rotation: 0
+                position: v(98.69, -156.62)
             },
             {
                 id: "container_mark",
-                position: v(113.09, -156.62),
-                rotation: 0
+                position: v(113.09, -156.62)
             },
             // Group 3
             {
                 id: "container_mark",
                 position: v(45.04, -110.4),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(45.04, -96.9),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(45.04, -83.32),
-                rotation: 1
+                orientation: 1
             },
             // Group 4
             {
                 id: "container_mark",
                 position: v(110, -110.4),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(110, -96.9),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(110, -83.32),
-                rotation: 1
+                orientation: 1
             },
             // Group 5
             {
                 id: "container_mark",
-                position: v(6.21, -45.74),
-                rotation: 0
+                position: v(6.21, -45.74)
             },
             {
                 id: "container_mark",
-                position: v(20.57, -45.74),
-                rotation: 0
+                position: v(20.57, -45.74)
             },
             {
                 id: "container_mark",
-                position: v(35.03, -45.74),
-                rotation: 0
+                position: v(35.03, -45.74)
             },
             {
                 id: "container_mark",
-                position: v(6.21, -18.22),
-                rotation: 0
+                position: v(6.21, -18.22)
             },
             {
                 id: "container_mark",
-                position: v(20.88, -18.22),
-                rotation: 0
+                position: v(20.88, -18.22)
             },
             {
                 id: "container_mark",
-                position: v(35.28, -18.22),
-                rotation: 0
+                position: v(35.28, -18.22)
             },
             // Group 6
             {
                 id: "container_mark",
-                position: v(104.35, -18.42),
-                rotation: 0
+                position: v(104.35, -18.42)
             },
             {
                 id: "container_mark",
-                position: v(119.01, -18.42),
-                rotation: 0
+                position: v(119.01, -18.42)
             },
             // Group 7
             {
                 id: "container_mark",
-                position: v(116.82, 83),
-                rotation: 0
+                position: v(116.82, 83)
             },
             {
                 id: "container_mark",
-                position: v(131.21, 83),
-                rotation: 0
+                position: v(131.21, 83)
             },
             {
                 id: "container_mark",
-                position: v(116.82, 110.65),
-                rotation: 0
+                position: v(116.82, 110.65)
             },
             {
                 id: "container_mark",
-                position: v(131.21, 110.65),
-                rotation: 0
+                position: v(131.21, 110.65)
             },
             // Group 8
             {
                 id: "container_mark",
-                position: v(116.79, 150.27),
-                rotation: 0
+                position: v(116.79, 150.27)
             },
             {
                 id: "container_mark",
-                position: v(131.18, 150.27),
-                rotation: 0
+                position: v(131.18, 150.27)
             },
             {
                 id: "container_mark",
-                position: v(116.59, 178.02),
-                rotation: 0
+                position: v(116.59, 178.02)
             },
             {
                 id: "container_mark",
-                position: v(130.97, 178.02),
-                rotation: 0
+                position: v(130.97, 178.02)
             },
             // Group 9
             {
                 id: "container_mark",
                 position: v(-128.55, 25.76),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(-128.55, 40.31),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(-128.55, 55.18),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(-101.15, 55.18),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(-101.15, 40.44),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "container_mark",
                 position: v(-101.15, 25.67),
-                rotation: 1
+                orientation: 1
             },
             {
                 id: "floor_oil_01",
@@ -1804,23 +1669,17 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
 
             { idString: "barrel", position: v(5, 14) },
             {
-                get idString() {
-                    return weightedRandom(["aegis_crate", "flint_crate"], [1, 1]);
-                },
+                idString: { aegis_crate: 1, flint_crate: 1 },
                 position: v(15, 14)
             },
             { idString: "super_barrel", position: v(25, 11) },
 
             {
-                get idString() {
-                    return weightedRandom(["aegis_crate", "flint_crate"], [1, 1]);
-                },
+                idString: { aegis_crate: 1, flint_crate: 1 },
                 position: v(90, -32)
             },
             {
-                get idString() {
-                    return weightedRandom(["barrel", "super_barrel"], [1, 1]);
-                },
+                idString: { aegis_crate: 1, flint_crate: 1 },
                 position: v(85, -42)
             },
 
@@ -1859,18 +1718,16 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
                 { length: 11 },
                 (_, i) => ({
                     idString: "inner_concrete_wall_1",
-                    position: v(-26.23, -204 + 11.6 * i),
-                    rotation: 1,
-                    scale: 1.07
+                    position: v(-26.23, -204 + 10.7 * i),
+                    rotation: 1
                 })
             ),
             ...Array.from(
                 { length: 4 },
                 (_, i) => ({
                     idString: "inner_concrete_wall_1",
-                    position: v(-148 + 11.6 * i, -82.4),
-                    rotation: 0,
-                    scale: 1.07
+                    position: v(-148 + 10.7 * i, -82.4),
+                    rotation: 0
                 })
             ),
 
@@ -1885,9 +1742,6 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
 
         ],
         subBuildings: [
-            { idString: "ship", position: v(205, -50) },
-            { idString: "crane", position: v(100, -95) },
-
             { idString: "porta_potty", position: v(171.2, -12.34), orientation: 1 },
             { idString: "porta_potty", position: v(151.2, -12.34), orientation: 1 },
             { idString: "porta_potty", position: v(131.2, -12.34), orientation: 1 },
@@ -1902,194 +1756,192 @@ export const Buildings = new ObjectDefinitions<BuildingDefinition>([
 
             // Group 1
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-37.52, 184.72),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-51.98, 184.73),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(37.83, -157.25),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(37.83, -157.25)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(51.98, -157.25),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(51.98, -157.25)
             },
             // Group 2
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-98.38, 184.09),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-112.84, 184.09),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(113.09, -156.62),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(113.09, -156.62)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(98.38, -156.62),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(98.38, -156.62)
             },
             // Group 3
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-110.4, -45.04),
                 orientation: 3
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-96.9, -45.04),
                 orientation: 3
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(83.32, 45.04),
                 orientation: 1
             },
             // Group 4
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(110.4, 110),
                 orientation: 1
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-96.9, -110),
                 orientation: 3
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(83.32, 110),
                 orientation: 1
             },
             // Group 5
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-6.21, 45.74),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-20.57, 45.74),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-35.28, 45.74),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(6.21, -18.22),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(6.21, -18.22)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(20.88, -18.22),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(20.88, -18.22)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(35.28, -18.22),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(35.28, -18.22)
             },
             // Group 6
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(104.35, -18.42),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(104.35, -18.42)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(119.01, -18.42),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(119.01, -18.42)
             },
             // Group 7
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-116.82, -83),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-131.21, -83),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(116.82, 110.65),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(116.82, 110.65)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(131.21, 110.65),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(131.21, 110.65)
             },
 
             // Group 8
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-116.79, -150.27),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-131.18, -150.27),
                 orientation: 2
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(130.97, 178.02),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(130.97, 178.02)
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
-                position: v(116.59, 178.02),
-                orientation: 0
+                idString: randomContainer2,
+                position: v(116.59, 178.02)
             },
             // Group 9
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(25.76, 128.55),
                 orientation: 3
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(40.31, 128.55),
                 orientation: 3
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(55.18, 128.55),
                 orientation: 3
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-55.18, -101.15),
                 orientation: 1
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-40.31, -101.15),
                 orientation: 1
             },
             {
-                get idString() { return weightedRandom(Array.from({ length: 11 }, (_, i) => `container_${i + 1}`), [1, 2, 3, 4, 3, 4, 3, 4, 3, 3, 7]); },
+                idString: randomContainer2,
                 position: v(-25.67, -101.15),
                 orientation: 1
             }
+        ]
+    },
+    {
+        idString: "port_complex",
+        name: "Port Complex",
+        spawnHitbox: RectangleHitbox.fromRect(430, 425, v(-68, 0)),
+        spawnMode: MapObjectSpawnMode.Beach,
+        subBuildings: [
+            { idString: "port", position: v(-125, 0) },
+            { idString: "ship", position: v(80, -50) },
+            { idString: "crane", position: v(-25, -95) }
         ]
     }
 

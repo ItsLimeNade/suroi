@@ -1,12 +1,14 @@
-import { type ItemDefinition, ItemType } from "../utils/objectDefinitions";
+import { type ItemDefinition, ItemType, ObjectDefinitions } from "../utils/objectDefinitions";
 
 export interface SkinDefinition extends ItemDefinition {
     readonly itemType: ItemType.Skin
     readonly notInLoadout?: boolean
+    readonly grassTint?: boolean
+    readonly hideEquipment?: boolean
     readonly roleRequired?: string
 }
 
-export const Skins: SkinDefinition[] = [
+export const Skins = new ObjectDefinitions<SkinDefinition>([
     {
         idString: "hasanger",
         name: "Hasanger",
@@ -240,10 +242,23 @@ export const Skins: SkinDefinition[] = [
         notInLoadout: true
     },
     {
-        idString: "debug",
-        name: "Debug",
+        idString: "stardust",
+        name: "Stardust",
         itemType: ItemType.Skin,
-        roleRequired: "dev",
+        notInLoadout: true
+    },
+    {
+        idString: "aurora",
+        name: "Aurora",
+        itemType: ItemType.Skin,
+        notInLoadout: true
+    },
+    {
+        idString: "ghillie_suit",
+        name: "Ghillie Suit",
+        itemType: ItemType.Skin,
+        grassTint: true,
+        hideEquipment: true,
         notInLoadout: true
     }
-];
+]);

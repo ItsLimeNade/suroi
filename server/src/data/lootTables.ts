@@ -3,7 +3,7 @@ import { type ReferenceTo } from "../../../common/src/utils/objectDefinitions";
 
 export type WeightedItem =
     (
-        { readonly item: ReferenceTo<LootDefinition> } |
+        { readonly item: ReferenceTo<LootDefinition> | null } |
         { readonly tier: string }
     ) &
     {
@@ -11,16 +11,15 @@ export type WeightedItem =
         readonly spawnSeparately?: boolean
         readonly weight: number
     };
-export interface LootTable { min: number, max: number, loot: WeightedItem[] | WeightedItem[][] }
 
+export interface LootTable {
+    readonly min: number
+    readonly max: number
+    readonly loot: WeightedItem[] | WeightedItem[][]
+}
+
+// TODO Refactor loot table system
 export const LootTables: Record<string, LootTable> = {
-    gas_can: {
-        min: 1,
-        max: 1,
-        loot: [
-            { item: "gas_can", weight: 1 }
-        ]
-    },
     ground_loot: {
         min: 1,
         max: 1,
@@ -96,11 +95,19 @@ export const LootTables: Record<string, LootTable> = {
             { item: "mosin", weight: 1 }
         ]
     },
+    pumpkin: {
+        min: 1,
+        max: 1,
+        loot: [
+            { item: "s_g17", weight: 0.95 },
+            { item: "usas12", weight: 0.05 }
+        ]
+    },
     blueberry_bush: {
         min: 1,
         max: 1,
         loot: [
-            { tier: "equipment", weight: 1 },
+            { tier: "special_equipment", weight: 1 },
             { tier: "healing_items", weight: 1 },
             { tier: "scopes", weight: 1 }
         ]
@@ -171,9 +178,8 @@ export const LootTables: Record<string, LootTable> = {
         min: 1,
         max: 1,
         loot: [
-            { item: "verified", weight: 0.2 },
-            { item: "nokilpls", weight: 0.1 },
-            { item: "basic_outfit", weight: 0.0001 }
+            { item: "verified", weight: 2 },
+            { item: "nokilpls", weight: 1 }
         ]
     },
     toilet: {
@@ -216,11 +222,88 @@ export const LootTables: Record<string, LootTable> = {
             { tier: "guns", weight: 0.05 }
         ]
     },
-    gun_mount: {
+    gun_mount_mcx_spear: {
         min: 1,
         max: 1,
         loot: [
             { item: "mcx_spear", weight: 1 }
+        ]
+    },
+    gun_mount_stoner_63: {
+        min: 1,
+        max: 1,
+        loot: [
+            { item: "stoner_63", weight: 1 }
+        ]
+    },
+    gas_can: {
+        min: 1,
+        max: 1,
+        loot: [
+            { item: "gas_can", weight: 1 }
+        ]
+    },
+    airdrop_crate: {
+        min: 1,
+        max: 1,
+        loot: [
+            [
+                { tier: "airdrop_equipment", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_scopes", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_healing_items", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_skins", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_melee", weight: 1 }
+            ],
+            [
+                { tier: "ammo", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_guns", weight: 1 }
+            ]
+        ]
+    },
+    gold_airdrop_crate: {
+        min: 1,
+        max: 1,
+        loot: [
+            [
+                { tier: "airdrop_equipment", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_scopes", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_healing_items", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_skins", weight: 1 }
+            ],
+            [
+                { tier: "airdrop_melee", weight: 1 }
+            ],
+            [
+                { tier: "ammo", weight: 1 }
+            ],
+            [
+                { tier: "gold_airdrop_guns", weight: 1 }
+            ]
+        ]
+    },
+    flint_stone: {
+        min: 1,
+        max: 1,
+        loot: [
+            { tier: "gold_airdrop_guns", weight: 1 },
+            { item: "medikit", weight: 1 },
+            { item: "tablets", weight: 1 }
         ]
     }
 };
@@ -233,25 +316,26 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "saf_200", weight: 1.5 },
         { item: "cz75a", weight: 1.5 },
         { item: "hp18", weight: 1.25 },
-        { item: "micro_uzi", weight: 1.25 },
-        { item: "aug", weight: 1 },
-        { item: "model_37", weight: 1 },
-        { item: "ak47", weight: 0.8 },
-        { item: "m3k", weight: 0.5 },
+        { item: "micro_uzi", weight: 1 },
+        { item: "ak47", weight: 1 },
+        { item: "model_37", weight: 0.95 },
+        { item: "aug", weight: 0.7 },
+        { item: "m3k", weight: 0.3 },
         { item: "m16a4", weight: 0.1 },
-        { item: "mcx_spear", weight: 0.1 },
         { item: "arx160", weight: 0.1 },
         { item: "flues", weight: 0.1 },
-        { item: "sr25", weight: 0.085 },
-        { item: "mini14", weight: 0.085 },
-        { item: "vss", weight: 0.075 },
         { item: "lewis_gun", weight: 0.05 },
-        { item: "stoner_63", weight: 0.03 },
-        { item: "mosin", weight: 0.02 },
+        { item: "vss", weight: 0.02 },
+        { item: "sr25", weight: 0.01 },
+        { item: "mini14", weight: 0.01 },
+        { item: "mcx_spear", weight: 0.01 },
+        { item: "stoner_63", weight: 0.005 },
+        { item: "radio", weight: 0.005 },
+        { item: "mosin", weight: 0.005 },
         { item: "tango_51", weight: 0.002 }
     ],
     healing_items: [
-        { item: "gauze", weight: 3, count: 5 },
+        { item: "gauze", count: 5, weight: 3 },
         { item: "cola", weight: 2 },
         { item: "tablets", weight: 1 },
         { item: "medikit", weight: 1 }
@@ -263,17 +347,17 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "15x_scope", weight: 0.00025 }
     ],
     equipment: [
-        { item: "helmet_1", weight: 1 },
-        { item: "helmet_2", weight: 0.3 },
-        { item: "helmet_3", weight: 0.1 },
+        { item: "basic_helmet", weight: 1 },
+        { item: "regular_helmet", weight: 0.2 },
+        { item: "tactical_helmet", weight: 0.01 },
 
-        { item: "vest_1", weight: 1 },
-        { item: "vest_2", weight: 0.3 },
-        { item: "vest_3", weight: 0.1 },
+        { item: "basic_vest", weight: 1 },
+        { item: "regular_vest", weight: 0.2 },
+        { item: "tactical_vest", weight: 0.01 },
 
-        { item: "pack_1", weight: 1 },
-        { item: "pack_2", weight: 0.3 },
-        { item: "pack_3", weight: 0.1 }
+        { item: "basic_pack", weight: 1 },
+        { item: "regular_pack", weight: 0.2 },
+        { item: "tactical_pack", weight: 0.01 }
     ],
     ammo: [
         { item: "12g", count: 10, weight: 0.75 },
@@ -293,23 +377,24 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "flues", weight: 0.8 },
         { item: "saf_200", weight: 0.75 },
         { item: "cz75a", weight: 0.75 },
-        { item: "vss", weight: 0.55 },
         { item: "m16a4", weight: 0.5 },
+        { item: "lewis_gun", weight: 0.5 },
         { item: "g19", weight: 0.45 },
         { item: "m1895", weight: 0.45 },
-        { item: "sr25", weight: 0.35 },
-        { item: "mini14", weight: 0.35 },
-        { item: "lewis_gun", weight: 0.35 },
-        { item: "mcx_spear", weight: 0.35 },
-        { item: "stoner_63", weight: 0.05 },
-        { item: "mosin", weight: 0.04 },
+        { item: "vss", weight: 0.07 },
+        { item: "sr25", weight: 0.05 },
+        { item: "mini14", weight: 0.05 },
+        { item: "mcx_spear", weight: 0.05 },
+        { item: "stoner_63", weight: 0.01 },
+        { item: "radio", weight: 0.01 },
+        { item: "mosin", weight: 0.01 },
         { item: "tango_51", weight: 0.004 }
     ],
     special_healing_items: [
         { item: "cola", weight: 3 },
         { item: "tablets", weight: 1 },
         { item: "medikit", weight: 1 },
-        { item: "gauze", weight: 3 }
+        { item: "gauze", count: 5, weight: 3 }
     ],
     special_scopes: [
         { item: "2x_scope", weight: 1 },
@@ -318,20 +403,63 @@ export const LootTiers: Record<string, WeightedItem[]> = {
         { item: "15x_scope", weight: 0.005 }
     ],
     special_equipment: [
-        { item: "helmet_1", weight: 1 },
-        { item: "helmet_2", weight: 0.5 },
-        { item: "helmet_3", weight: 0.15 },
+        { item: "basic_helmet", weight: 1 },
+        { item: "regular_helmet", weight: 0.3 },
+        { item: "tactical_helmet", weight: 0.03 },
 
-        { item: "vest_1", weight: 1 },
-        { item: "vest_2", weight: 0.5 },
-        { item: "vest_3", weight: 0.15 },
+        { item: "basic_vest", weight: 1 },
+        { item: "regular_vest", weight: 0.3 },
+        { item: "tactical_vest", weight: 0.03 },
 
-        { item: "pack_1", weight: 1 },
-        { item: "pack_2", weight: 0.5 },
-        { item: "pack_3", weight: 0.15 }
+        { item: "basic_pack", weight: 1 },
+        { item: "regular_pack", weight: 0.3 },
+        { item: "tactical_pack", weight: 0.03 }
     ],
     melee: [
         { item: "baseball_bat", weight: 4 },
-        { item: "kbar", weight: 2.5 }
+        { item: "kbar", weight: 2 }
+    ],
+    airdrop_equipment: [
+        { item: "tactical_helmet", weight: 1 },
+        { item: "tactical_vest", weight: 1 },
+        { item: "tactical_pack", weight: 1 }
+    ],
+    airdrop_scopes: [
+        { item: "4x_scope", weight: 1 },
+        { item: "8x_scope", weight: 0.5 },
+        { item: "15x_scope", weight: 0.0025 }
+    ],
+    airdrop_healing_items: [
+        { item: "gauze", count: 5, weight: 1.5 },
+        { item: "medikit", weight: 1 },
+        { item: "cola", weight: 1 },
+        { item: "tablets", weight: 1 }
+    ],
+    airdrop_skins: [
+        { item: null, weight: 1 },
+        { item: "stardust", weight: 0.5 },
+        { item: "aurora", weight: 0.5 },
+        { item: "ghillie_suit", weight: 0.1 },
+        { item: "basic_outfit", weight: 0.001 }
+    ],
+    airdrop_melee: [
+        { item: null, weight: 1 },
+        { item: "kbar", weight: 0.1 }
+    ],
+    airdrop_guns: [
+        { item: "mini14", weight: 1 },
+        { item: "sr25", weight: 1 },
+        { item: "vss", weight: 1 },
+        { item: "mcx_spear", weight: 0.95 },
+        { item: "mosin", weight: 0.95 },
+        { item: "tango_51", weight: 0.9 },
+        { item: "stoner_63", weight: 0.9 },
+        { item: "radio", weight: 0.1 }
+    ],
+    gold_airdrop_guns: [
+        { item: "m1_garand", weight: 1.1 },
+        { item: "acr", weight: 1 },
+        { item: "barrett", weight: 0.5 },
+        { item: "g19", weight: 0.0005 }
     ]
 };

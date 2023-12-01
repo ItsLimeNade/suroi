@@ -1,6 +1,6 @@
 import { type ObstacleDefinition } from "../definitions/obstacles";
 import { type Orientation } from "../typings";
-import { RectangleHitbox, type Hitbox } from "./hitbox";
+import { RectangleHitbox } from "./hitbox";
 import { ObstacleSpecialRoles } from "./objectDefinitions";
 import { v, vAdd, vDiv, vDot, vLength, vLengthSqr, vMul, vNormalize, vNormalizeSafe, vSub, type Vector } from "./vector";
 
@@ -113,7 +113,7 @@ export function lerp(start: number, end: number, interpFactor: number): number {
  * @param interpFactor The interpolation factor ranging from 0 to 1
  *
  */
-export function vecLerp(start: Vector, end: Vector, interpFactor: number): Vector {
+export function vLerp(start: Vector, end: Vector, interpFactor: number): Vector {
     return vAdd(vMul(start, 1 - interpFactor), vMul(end, interpFactor));
 }
 
@@ -149,17 +149,6 @@ export function rectangleCollision(min: Vector, max: Vector, pos: Vector, rad: n
     const distSquared = distX * distX + distY * distY;
 
     return (distSquared < rad * rad) || (pos.x >= min.x && pos.x <= max.x && pos.y >= min.y && pos.y <= max.y);
-}
-
-export function rectPolyCollision(min: Vector, max: Vector, poly: Vector[]): boolean {
-    for (let i = 0; i < poly.length; i++) {
-        const a = poly[i];
-        const b = i === poly.length - 1 ? poly[0] : poly[i + 1];
-        if (lineIntersectsRect2(a, b, min, max)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 /**
@@ -504,11 +493,7 @@ export function lineIntersectsRect2(s0: Vector, s1: Vector, min: Vector, max: Ve
         }
     }
 
-    if (tmin > dist) {
-        return false;
-    }
-
-    return true;
+    return tmin <= dist;
 }
 
 export type CollisionResponse = { readonly dir: Vector, readonly pen: number } | null;
@@ -562,6 +547,31 @@ export function rectCircleIntersection(min: Vector, max: Vector, pos: Vector, ra
     return null;
 }
 
+export function rectRectIntersection(min0: Vector, max0: Vector, min1: Vector, max1: Vector): CollisionResponse {
+    const e0 = vMul(vSub(max0, min0), 0.5);
+    const c0 = vAdd(min0, e0);
+    const e1 = vMul(vSub(max1, min1), 0.5);
+    const c1 = vAdd(min1, e1);
+    const n = vSub(c1, c0);
+    const xo = e0.x + e1.x - Math.abs(n.x);
+    if (xo > 0.0) {
+        const yo = e0.y + e1.y - Math.abs(n.y);
+        if (yo > 0.0) {
+            if (xo > yo) {
+                return {
+                    dir: n.x < 0 ? v(-1, 0) : v(1, 0),
+                    pen: xo
+                };
+            }
+            return {
+                dir: n.y < 0 ? v(0, -1) : v(0, 1),
+                pen: yo
+            };
+        }
+    }
+    return null;
+}
+
 export function calculateDoorHitboxes<
     // tf are you talking about
     // eslint-disable-next-line space-before-function-paren
@@ -571,8 +581,8 @@ export function calculateDoorHitboxes<
     position: Vector,
     rotation: Orientation
 ): U extends "slide"
-        ? { readonly openHitbox: Hitbox }
-        : { readonly openHitbox: Hitbox, readonly openAltHitbox: Hitbox } {
+        ? { readonly openHitbox: RectangleHitbox }
+        : { readonly openHitbox: RectangleHitbox, readonly openAltHitbox: RectangleHitbox } {
     if (!(definition.hitbox instanceof RectangleHitbox) || definition.role !== ObstacleSpecialRoles.Door) {
         throw new Error("Unable to calculate hitboxes for door: Not a door or hitbox is non-rectangular");
     }
@@ -580,8 +590,8 @@ export function calculateDoorHitboxes<
     type Swivel = typeof definition & { readonly operationStyle: "swivel" };
     type Slide = typeof definition & { readonly operationStyle: "slide" };
     type Return = U extends "slide"
-        ? { readonly openHitbox: Hitbox }
-        : { readonly openHitbox: Hitbox, readonly openAltHitbox: Hitbox };
+        ? { readonly openHitbox: RectangleHitbox }
+        : { readonly openHitbox: RectangleHitbox, readonly openAltHitbox: RectangleHitbox };
 
     switch (definition.operationStyle) {
         case "slide": {
@@ -596,7 +606,7 @@ export function calculateDoorHitboxes<
             // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
             return {
                 openHitbox: new RectangleHitbox(openHitbox.min, openHitbox.max)
-            } as unknown as Return;
+            } as Return;
         }
         case "swivel":
         default: {
@@ -615,10 +625,11 @@ export function calculateDoorHitboxes<
                 absMod(rotation - 1, 4) as Orientation
             );
 
+            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
             return {
                 openHitbox: new RectangleHitbox(openRectangle.min, openRectangle.max),
                 openAltHitbox: new RectangleHitbox(openAltRectangle.min, openAltRectangle.max)
-            } as unknown as Return;
+            } as Return;
         }
     }
 }

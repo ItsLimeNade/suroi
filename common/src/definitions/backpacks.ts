@@ -1,4 +1,4 @@
-import { type ItemDefinition, ItemType } from "../utils/objectDefinitions";
+import { type ItemDefinition, ItemType, ObjectDefinitions } from "../utils/objectDefinitions";
 
 export interface BackpackDefinition extends ItemDefinition {
     readonly itemType: ItemType.Backpack
@@ -6,10 +6,10 @@ export interface BackpackDefinition extends ItemDefinition {
     readonly maxCapacity: Record<string, number>
 }
 
-export const Backpacks: BackpackDefinition[] = [
+export const Backpacks = new ObjectDefinitions<BackpackDefinition>([
     {
-        idString: "pack_0",
-        name: "Lvl. 0 Pack",
+        idString: "bag",
+        name: "Bag",
         itemType: ItemType.Backpack,
         level: 0,
         maxCapacity: {
@@ -21,13 +21,15 @@ export const Backpacks: BackpackDefinition[] = [
             "556mm": 90,
             "762mm": 90,
             "9mm": 120,
-            power_cell: Infinity
+            "127mm": 10,
+            power_cell: Infinity,
+            curadell: 1
         },
         noDrop: true
     },
     {
-        idString: "pack_1",
-        name: "Lvl. 1 Pack",
+        idString: "basic_pack",
+        name: "Basic Pack",
         itemType: ItemType.Backpack,
         level: 1,
         maxCapacity: {
@@ -39,12 +41,14 @@ export const Backpacks: BackpackDefinition[] = [
             "556mm": 180,
             "762mm": 180,
             "9mm": 240,
-            power_cell: Infinity
+            "127mm": 20,
+            power_cell: Infinity,
+            curadell: 2
         }
     },
     {
-        idString: "pack_2",
-        name: "Lvl. 2 Pack",
+        idString: "regular_pack",
+        name: "Regular Pack",
         itemType: ItemType.Backpack,
         level: 2,
         maxCapacity: {
@@ -56,12 +60,14 @@ export const Backpacks: BackpackDefinition[] = [
             "556mm": 240,
             "762mm": 240,
             "9mm": 330,
-            power_cell: Infinity
+            "127mm": 40,
+            power_cell: Infinity,
+            curadell: 3
         }
     },
     {
-        idString: "pack_3",
-        name: "Lvl. 3 Pack",
+        idString: "tactical_pack",
+        name: "Tactical Pack",
         itemType: ItemType.Backpack,
         level: 3,
         maxCapacity: {
@@ -73,7 +79,9 @@ export const Backpacks: BackpackDefinition[] = [
             "556mm": 300,
             "762mm": 300,
             "9mm": 420,
-            power_cell: Infinity
+            "127mm": 80,
+            power_cell: Infinity,
+            curadell: 4
         }
     }
-];
+]);

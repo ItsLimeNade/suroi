@@ -1,4 +1,5 @@
-import { type BulletDefinition, type ObjectDefinition, ObjectDefinitions } from "../utils/objectDefinitions";
+import { type BaseBulletDefinition, type ObjectDefinition, ObjectDefinitions, type ReferenceTo } from "../utils/objectDefinitions";
+import { type DecalDefinition } from "./decals";
 
 export interface ExplosionDefinition extends ObjectDefinition {
     readonly damage: number
@@ -19,8 +20,8 @@ export interface ExplosionDefinition extends ObjectDefinition {
     readonly sound?: string // TODO: move the barrel and super barrel destroy sounds to explosion sounds
 
     readonly shrapnelCount: number
-    readonly ballistics: BulletDefinition
-    readonly decal?: string
+    readonly ballistics: BaseBulletDefinition
+    readonly decal?: ReferenceTo<DecalDefinition>
 }
 
 export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
@@ -45,10 +46,10 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
             },
             shrapnelCount: 10,
             ballistics: {
-                damage: 10,
+                damage: 2,
                 obstacleMultiplier: 1,
                 speed: 0.08,
-                maxDistance: 20,
+                range: 20,
                 rangeVariance: 1,
                 shrapnel: true
             }
@@ -76,7 +77,7 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
                 damage: 10,
                 obstacleMultiplier: 1,
                 speed: 0.08,
-                maxDistance: 20,
+                range: 20,
                 rangeVariance: 1,
                 shrapnel: true
             }
@@ -104,7 +105,7 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
                 damage: 10,
                 obstacleMultiplier: 1,
                 speed: 0.08,
-                maxDistance: 20,
+                range: 20,
                 rangeVariance: 1,
                 shrapnel: true
             }
@@ -115,8 +116,8 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
             damage: 160,
             obstacleMultiplier: 3,
             radius: {
-                min: 12,
-                max: 36
+                min: 8,
+                max: 25
             },
             cameraShake: {
                 duration: 500,
@@ -129,10 +130,10 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
             },
             shrapnelCount: 20,
             ballistics: {
-                damage: 10,
+                damage: 4,
                 obstacleMultiplier: 2,
                 speed: 0.08,
-                maxDistance: 30,
+                range: 30,
                 rangeVariance: 1,
                 shrapnel: true
             }
@@ -160,7 +161,7 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
                 damage: 12,
                 obstacleMultiplier: 2,
                 speed: 0.08,
-                maxDistance: 30,
+                range: 30,
                 rangeVariance: 1,
                 shrapnel: true
             }
@@ -188,7 +189,7 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
                 damage: 15,
                 obstacleMultiplier: 3,
                 speed: 0.08,
-                maxDistance: 60,
+                range: 60,
                 rangeVariance: 1,
                 shrapnel: true
             }
@@ -196,7 +197,7 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
         {
             idString: "usas_explosion",
             name: "USAS-12",
-            damage: 50,
+            damage: 35,
             obstacleMultiplier: 2,
             radius: {
                 min: 6,
@@ -216,7 +217,7 @@ export const Explosions = new ObjectDefinitions<ExplosionDefinition>(
                 damage: 3,
                 obstacleMultiplier: 2,
                 speed: 0.06,
-                maxDistance: 10,
+                range: 10,
                 rangeVariance: 1,
                 shrapnel: true
             },

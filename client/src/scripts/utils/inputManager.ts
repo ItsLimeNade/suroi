@@ -1,36 +1,26 @@
+import $ from "jquery";
 import nipplejs, { type JoystickOutputData } from "nipplejs";
+import { isMobile } from "pixi.js";
+
 import { absMod, angleBetweenPoints, clamp, distance, distanceSquared } from "../../../../common/src/utils/math";
 import { v, vDiv } from "../../../../common/src/utils/vector";
 import { type Game } from "../game";
 import { defaultBinds } from "./console/defaultClientCVars";
 import { type GameSettings } from "./console/gameConsole";
 import { FIRST_EMOTE_ANGLE, FOURTH_EMOTE_ANGLE, PIXI_SCALE, SECOND_EMOTE_ANGLE, THIRD_EMOTE_ANGLE } from "./constants";
-import { type ItemDefinition, ItemType, reifyDefinition } from "../../../../common/src/utils/objectDefinitions";
-import { isMobile } from "pixi.js";
+import { ItemType } from "../../../../common/src/utils/objectDefinitions";
 import { InputActions } from "../../../../common/src/constants";
 import { Scopes } from "../../../../common/src/definitions/scopes";
 import { Loots } from "../../../../common/src/definitions/loots";
-
-export type InputAction = {
-    type: InputActions.UseItem
-    item: ItemDefinition
-} | {
-    type: InputActions.EquipItem | InputActions.DropItem
-    slot: number
-} | {
-    type: InputActions
-};
+import { type InputAction, InputPacket } from "../../../../common/src/packets/inputPacket";
 
 export class InputManager {
-    game: Game;
+    readonly game: Game;
+    readonly binds: InputMapper;
 
-    binds: InputMapper;
+    readonly isMobile!: boolean;
 
-    get isMobile(): boolean {
-        return isMobile.any && this.game.console.getConfig("mb_controls_enabled");
-    }
-
-    movement = {
+    readonly movement = {
         up: false,
         left: false,
         down: false,
@@ -52,13 +42,16 @@ export class InputManager {
 
     selectedEmote?: InputActions;
 
-    actions: InputAction[] = [];
+    readonly actions: InputAction[] = [];
 
     addAction(action: InputAction | InputActions): void {
+        if (this.actions.length > 7) return;
+
         if (typeof action === "number") {
-            this.actions.push({ type: action });
-            return;
+            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+            action = { type: action } as InputAction;
         }
+
         this.actions.push(action);
     }
 
@@ -72,31 +65,53 @@ export class InputManager {
 
     turning = false;
 
-    private _lastItemIndex = 0;
-    get lastItemIndex(): number { return this._lastItemIndex; }
+    update(): void {
+        if (this.game.gameOver) return;
+        const packet = new InputPacket();
+        packet.movement = this.movement;
+        packet.attacking = this.attacking;
 
-    private _activeItemIndex = 2;
-    get activeItemIndex(): number { return this._activeItemIndex; }
-    set activeItemIndex(i: number) {
-        if (this._lastItemIndex !== this._activeItemIndex) this._lastItemIndex = this._activeItemIndex;
-        this._activeItemIndex = i;
+        packet.turning = this.turning;
+        if (this.turning) {
+            packet.rotation = this.resetAttacking ? this.shootOnReleaseAngle : this.rotation;
+            packet.distanceToMouse = this.distanceToMouse;
+            this.turning = false;
+        }
+
+        packet.isMobile = this.isMobile;
+        if (this.isMobile) {
+            packet.mobile = {
+                angle: this.movementAngle,
+                moving: this.movement.moving
+            };
+        }
+
+        if (this.resetAttacking) {
+            this.attacking = false;
+            this.resetAttacking = false;
+        }
+        packet.actions = this.actions;
+
+        this.game.sendPacket(packet);
+        this.actions.length = 0;
     }
 
     cycleScope(offset: number): void {
-        const scope = this.game.playerManager.scope;
-        const scopeId = Scopes.indexOf(scope);
+        const scope = this.game.uiManager.inventory.scope;
+        const scopeId = Scopes.definitions.indexOf(scope);
         let scopeString = scope.idString;
         let searchIndex = scopeId;
 
         let iterationCount = 0;
         // Prevent possible infinite loops
         while (iterationCount++ < 100) {
-            searchIndex = this.game.console.getConfig("cv_loop_scope_selection")
-                ? absMod(searchIndex + offset, Scopes.length)
-                : clamp(0, Scopes.length - 1, searchIndex + offset);
+            searchIndex = this.game.console.getBuiltInCVar("cv_loop_scope_selection")
+                ? absMod(searchIndex + offset, Scopes.definitions.length)
+                : clamp(searchIndex + offset, 0, Scopes.definitions.length - 1);
 
-            const scopeCandidate = Scopes[searchIndex].idString;
-            if (this.game.playerManager.items[scopeCandidate]) {
+            const scopeCandidate = Scopes.definitions[searchIndex].idString;
+
+            if (this.game.uiManager.inventory.items[scopeCandidate]) {
                 scopeString = scopeCandidate;
                 break;
             }
@@ -105,7 +120,7 @@ export class InputManager {
         if (scopeString !== scope.idString) {
             this.addAction({
                 type: InputActions.UseItem,
-                item: reifyDefinition(scopeString, Loots)
+                item: Loots.fromString(scopeString)
             });
         }
     }
@@ -117,6 +132,10 @@ export class InputManager {
 
     private mWheelStopTimer: number | undefined;
     setupInputs(): void {
+        // @ts-expect-error init code
+        // noinspection JSConstantReassignment
+        this.isMobile = isMobile.any && this.game.console.getBuiltInCVar("mb_controls_enabled");
+
         const game = this.game;
 
         const gameUi = $("#game-ui")[0];
@@ -168,7 +187,7 @@ export class InputManager {
                 const gamePos = vDiv(pixiPos, PIXI_SCALE);
                 this.distanceToMouse = distance(game.activePlayer.position, gamePos);
 
-                if (game.console.getConfig("cv_movement_smoothing")) {
+                if (game.console.getBuiltInCVar("cv_responsive_rotation")) {
                     game.activePlayer.container.rotation = this.rotation;
                     game.map.indicator.rotation = this.rotation;
                 }
@@ -179,8 +198,8 @@ export class InputManager {
 
         // Mobile joysticks
         if (this.isMobile) {
-            const size = game.console.getConfig("mb_joystick_size");
-            const transparency = game.console.getConfig("mb_joystick_transparency");
+            const size = game.console.getBuiltInCVar("mb_joystick_size");
+            const transparency = game.console.getBuiltInCVar("mb_joystick_transparency");
 
             const leftJoyStick = nipplejs.create({
                 zone: $("#left-joystick-container")[0],
@@ -206,8 +225,9 @@ export class InputManager {
                 if (!rightJoyStickUsed && !shootOnRelease) {
                     this.rotation = movementAngle;
                     this.turning = true;
-                    if (game.console.getConfig("cv_movement_smoothing") && !game.gameOver && game.activePlayer) {
+                    if (game.console.getBuiltInCVar("cv_responsive_rotation") && !game.gameOver && game.activePlayer) {
                         game.activePlayer.container.rotation = this.rotation;
+                        game.map.indicator.rotation = this.rotation;
                     }
                 }
             });
@@ -221,7 +241,7 @@ export class InputManager {
                 this.rotation = -Math.atan2(data.vector.y, data.vector.x);
                 this.turning = true;
                 const activePlayer = game.activePlayer;
-                if (game.console.getConfig("cv_movement_smoothing") && !game.gameOver && activePlayer) {
+                if (game.console.getBuiltInCVar("cv_responsive_rotation") && !game.gameOver && activePlayer) {
                     game.activePlayer.container.rotation = this.rotation;
                 }
 
@@ -233,7 +253,7 @@ export class InputManager {
                     activePlayer.images.aimTrail.alpha = 1;
                 }
 
-                const attacking = data.distance > game.console.getConfig("mb_joystick_size") / 3;
+                const attacking = data.distance > game.console.getBuiltInCVar("mb_joystick_size") / 3;
                 if (def.itemType === ItemType.Gun && def.shootOnRelease) {
                     shootOnRelease = true;
                     this.shootOnReleaseAngle = this.rotation;
@@ -274,16 +294,17 @@ export class InputManager {
             a normal key without modifiers.
 
             This only applies to keyboard events
+
+            Also we allow shift and alt to be used normally, because keyboard shortcuts usually involve
+            the meta or control key
         */
 
         if (event instanceof KeyboardEvent) {
             let modifierCount = 0;
             (
                 [
-                    "altKey",
                     "metaKey",
-                    "ctrlKey",
-                    "shiftKey"
+                    "ctrlKey"
                 ] as Array<keyof KeyboardEvent>
             ).forEach(modifier => (event[modifier] && modifierCount++));
 
@@ -291,7 +312,7 @@ export class InputManager {
             if (
                 (
                     modifierCount > 1 ||
-                    (modifierCount === 1 && !["Shift", "Control", "Alt", "Meta"].includes(event.key))
+                    (modifierCount === 1 && !["Control", "Meta"].includes(event.key))
                 ) && down
                 // …but it only invalidates pressing a key, not releasing it
             ) return;
@@ -373,7 +394,7 @@ export class InputManager {
         return key;
     }
 
-    private readonly actionsNames: Record<keyof (typeof defaultBinds), string> = {
+    private readonly actionsNames: Record<keyof typeof defaultBinds, string> = {
         "+up": "Move Up",
         "+down": "Move Down",
         "+left": "Move Left",
@@ -440,7 +461,7 @@ export class InputManager {
             const buttons = actions.map(bind => {
                 return $<HTMLButtonElement>("<button/>", {
                     class: "btn btn-darken btn-lg btn-secondary btn-bind",
-                    text: bind !== "" ? bind : "None"
+                    text: bind || "None"
                 }).appendTo(bindContainer)[0];
             });
 
@@ -543,11 +564,11 @@ export class InputManager {
 
         return name === undefined ? name : `./img/misc/${name}_icon.svg`;
     }
+
+    readonly getPickupBind = (): string => this.binds.getInputsBoundToAction("interact")[0];
 }
 
 class InputMapper {
-    readonly binds = new Set();
-
     // These two maps must be kept in sync!!
     private readonly _inputToAction = new Map<string, Set<string>>();
     private readonly _actionToInput = new Map<string, Set<string>>();
@@ -642,7 +663,7 @@ class InputMapper {
 
     private static readonly _generateGetter =
         <K, V>(map: Map<K, Set<V>>) =>
-            (key: K) => [...(map.get(key) ?? { values: () => [] }).values()];
+            (key: K) => [...(map.get(key)?.values?.() ?? [])];
 
     /**
      * Gets all the inputs bound to a particular action
@@ -677,12 +698,12 @@ class InputMapper {
     readonly listBoundActions = InputMapper._generateLister(this._actionToInput);
 
     getAll(): GameSettings["binds"] {
-        const binds: GameSettings["binds"] = {};
-
-        for (const [action, bindsSet] of this._actionToInput.entries()) {
-            binds[action] = [...bindsSet];
-        }
-
-        return binds;
+        return [...this._actionToInput.entries()].reduce<GameSettings["binds"]>(
+            (acc, [action, bindSet]) => {
+                acc[action] = [...bindSet];
+                return acc;
+            },
+            {}
+        );
     }
 }

@@ -1,27 +1,25 @@
-import { ArmorType, ObjectCategory, PlayerActions, TICKS_PER_SECOND } from "../../../common/src/constants";
+import { GameConstants, ObjectCategory, PlayerActions } from "../../../common/src/constants";
+import { ArmorType } from "../../../common/src/definitions/armors";
 import { Loots, type LootDefinition } from "../../../common/src/definitions/loots";
+import { PickupPacket } from "../../../common/src/packets/pickupPacket";
 import { CircleHitbox } from "../../../common/src/utils/hitbox";
 import { circleCircleIntersection, clamp, distance, velFromAngle } from "../../../common/src/utils/math";
-import { ItemType, LootRadius, reifyDefinition, type ReferenceTo } from "../../../common/src/utils/objectDefinitions";
-import { ObjectType } from "../../../common/src/utils/objectType";
-import { ObjectSerializations } from "../../../common/src/utils/objectsSerializations";
+import { ItemType, LootRadius, type ReifiableDef } from "../../../common/src/utils/objectDefinitions";
+import { type ObjectsNetData } from "../../../common/src/utils/objectsSerializations";
 import { randomRotation } from "../../../common/src/utils/random";
-import { type SuroiBitStream } from "../../../common/src/utils/suroiBitStream";
 import { v, vAdd, vClone, vMul, vSub, type Vector, vEqual } from "../../../common/src/utils/vector";
 import { type Game } from "../game";
 import { GunItem } from "../inventory/gunItem";
-import { PickupPacket } from "../packets/sending/pickupPacket";
 import { GameObject } from "../types/gameObject";
 import { Obstacle } from "./obstacle";
 import { type Player } from "./player";
 
-export class Loot<Def extends LootDefinition = LootDefinition> extends GameObject {
+export class Loot extends GameObject<ObjectCategory.Loot> {
     override readonly type = ObjectCategory.Loot;
-    override objectType: ObjectType<this["type"], Def>;
 
     declare readonly hitbox: CircleHitbox;
 
-    readonly definition: Def;
+    readonly definition: LootDefinition;
 
     count = 1;
 
@@ -37,11 +35,10 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
         this.hitbox.position = pos;
     }
 
-    constructor(game: Game, definition: ReferenceTo<Def> | Def, position: Vector, count?: number) {
+    constructor(game: Game, definition: ReifiableDef<LootDefinition>, position: Vector, count?: number) {
         super(game, position);
 
-        this.definition = reifyDefinition(definition, Loots);
-        this.objectType = ObjectType.fromString(this.type, this.definition.idString);
+        this.definition = Loots.reify(definition);
 
         this.hitbox = new CircleHitbox(LootRadius[this.definition.itemType], vClone(position));
 
@@ -49,17 +46,19 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
 
         this.push(randomRotation(), 1);
 
-        setTimeout((): void => { this.isNew = false; }, 100);
+        this.game.addTimeout(() => { this.isNew = false; }, 100);
     }
 
     update(): void {
         const oldPosition = vClone(this.position);
 
-        const moving = Math.abs(this.velocity.x) > 0.001 || Math.abs(this.velocity.y) > 0.001;
+        const moving = Math.abs(this.velocity.x) > 0.001 ||
+        Math.abs(this.velocity.y) > 0.001 ||
+        vEqual(oldPosition, this.position);
 
         if (moving) {
             this.velocity = vMul(this.velocity, 0.9);
-            const velocity = vMul(this.velocity, 1 / TICKS_PER_SECOND);
+            const velocity = vMul(this.velocity, 1 / GameConstants.tps);
             velocity.x = clamp(velocity.x, -1, 1);
             velocity.y = clamp(velocity.y, -1, 1);
             this.position = vAdd(this.position, velocity);
@@ -119,24 +118,26 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
             case ItemType.Healing:
             case ItemType.Ammo: {
                 const idString = this.definition.idString;
-                const currentCount = inventory.items[idString];
-                const maxCapacity = inventory.backpack?.maxCapacity[idString] ?? 0;
-                return currentCount + 1 <= maxCapacity;
+
+                return inventory.items[idString] + 1 <= (inventory.backpack?.maxCapacity[idString] ?? 0);
             }
             case ItemType.Melee: {
                 return this.definition !== inventory.getWeapon(2)?.definition;
             }
             case ItemType.Armor: {
-                switch (true) {
-                    case this.definition.armorType === ArmorType.Helmet: {
-                        return this.definition.level > (inventory.helmet?.level ?? 0);
+                let threshold = -Infinity;
+                switch (this.definition.armorType) {
+                    case ArmorType.Helmet: {
+                        threshold = inventory.helmet?.level ?? 0;
+                        break;
                     }
-                    case this.definition.armorType === ArmorType.Vest: {
-                        return this.definition.level > (inventory.vest?.level ?? 0);
+                    case ArmorType.Vest: {
+                        threshold = inventory.vest?.level ?? 0;
+                        break;
                     }
                 }
 
-                return false;
+                return this.definition.level > threshold;
             }
             case ItemType.Backpack: {
                 return this.definition.level > (inventory.backpack?.level ?? 0);
@@ -172,7 +173,8 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
             }
             case ItemType.Gun: {
                 if (!inventory.hasWeapon(0) || !inventory.hasWeapon(1)) {
-                    inventory.appendWeapon(this.definition.idString);
+                    const slot = inventory.appendWeapon(this.definition.idString);
+                    if (inventory.activeWeaponIndex > 1) inventory.setActiveWeaponIndex(slot);
                 } else if (inventory.activeWeaponIndex < 2 && this.definition !== inventory.activeWeapon.definition) {
                     if (player.action?.type === PlayerActions.Reload) player.action?.cancel();
                     inventory.addOrReplaceWeapon(inventory.activeWeaponIndex, this.definition.idString);
@@ -208,7 +210,6 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
                         player.inventory.vest = this.definition;
                 }
 
-                player.fullDirtyObjects.add(player);
                 this.game.fullDirtyObjects.add(player);
                 break;
             }
@@ -216,13 +217,11 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
                 if ((player.inventory.backpack?.level ?? 0) > 0) createNewItem(player.inventory.backpack);
                 player.inventory.backpack = this.definition;
 
-                player.fullDirtyObjects.add(player);
                 this.game.fullDirtyObjects.add(player);
                 break;
             }
             case ItemType.Scope: {
                 inventory.items[this.definition.idString] = 1;
-                player.dirty.inventory = true;
 
                 if (this.definition.zoomLevel > player.inventory.scope.zoomLevel) {
                     player.inventory.scope = this.definition.idString;
@@ -234,19 +233,20 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
                 createNewItem(player.loadout.skin);
                 player.loadout.skin = this.definition;
 
-                player.fullDirtyObjects.add(player);
                 this.game.fullDirtyObjects.add(player);
                 break;
             }
         }
 
-        player.dirty.inventory = true;
+        player.dirty.items = true;
 
         // Destroy the old loot
         this.game.removeLoot(this);
 
         // Send pickup packet
-        player.sendPacket(new PickupPacket(player, this.definition.idString));
+        const packet = new PickupPacket();
+        packet.item = this.definition;
+        player.sendPacket(packet);
 
         // If the item wasn't deleted, create a new loot item pushed slightly away from the player
         if (!deleteItem) createNewItem();
@@ -262,22 +262,17 @@ export class Loot<Def extends LootDefinition = LootDefinition> extends GameObjec
         }
     }
 
+    override get data(): Required<ObjectsNetData[ObjectCategory.Loot]> {
+        return {
+            position: this.position,
+            full: {
+                definition: this.definition,
+                count: this.count,
+                isNew: this.isNew
+            }
+        };
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-empty-function
-    override damage(amount: number, source?: GameObject): void { }
-
-    override serializePartial(stream: SuroiBitStream): void {
-        ObjectSerializations[ObjectCategory.Loot].serializePartial(stream, {
-            position: this.position,
-            fullUpdate: false
-        });
-    }
-
-    override serializeFull(stream: SuroiBitStream): void {
-        ObjectSerializations[ObjectCategory.Loot].serializeFull(stream, {
-            position: this.position,
-            count: this.count,
-            isNew: this.isNew,
-            fullUpdate: true
-        });
-    }
+    override damage(): void { }
 }

@@ -1,8 +1,10 @@
+import $ from "jquery";
+
 import { clamp } from "../../../../../common/src/utils/math";
 import { type Game } from "../../game";
 import { type Command } from "./commands";
-import { defaultBinds, defaultClientCVars } from "./defaultClientCVars";
-import { ConVar, ConsoleVariables, type CVarFlags, type CVarTypeMapping } from "./variables";
+import { defaultBinds, defaultClientCVars, type CVarTypeMapping } from "./defaultClientCVars";
+import { ConVar, ConsoleVariables, type CVarFlags } from "./variables";
 
 enum MessageType {
     Log = "log",
@@ -25,7 +27,7 @@ export type Stringable = string | number | boolean | bigint | undefined | null;
 export type PossibleError<E = never> = undefined | { readonly err: E };
 
 export interface GameSettings {
-    variables: Record<string, { value: Stringable, flags?: CVarFlags }>
+    variables: Record<string, Stringable | { value: Stringable, flags?: CVarFlags }>
     aliases: Record<string, string>
     binds: Record<string, string[]>
 }
@@ -77,7 +79,7 @@ export class GameConsole {
                 );
 
                 if (width !== w) {
-                    T.vars.set.builtIn("cv_console_width", width = w);
+                    T.variables.set.builtIn("cv_console_width", width = w);
 
                     if (!T._ui.container[0].style.width) {
                         T._ui.container.css("width", width);
@@ -94,7 +96,7 @@ export class GameConsole {
                 );
 
                 if (height !== h) {
-                    T.vars.set.builtIn("cv_console_height", height = h);
+                    T.variables.set.builtIn("cv_console_height", height = h);
 
                     if (!T._ui.container[0].style.height) {
                         T._ui.container.css("height", height);
@@ -124,7 +126,7 @@ export class GameConsole {
                 );
 
                 if (left !== l) {
-                    T.vars.set.builtIn("cv_console_left", left = l);
+                    T.variables.set.builtIn("cv_console_left", left = l);
 
                     if (!T._ui.container[0].style.left) {
                         T._ui.container.css("left", left);
@@ -141,7 +143,7 @@ export class GameConsole {
                 );
 
                 if (top !== t) {
-                    T.vars.set.builtIn("cv_console_top", top = t);
+                    T.variables.set.builtIn("cv_console_top", top = t);
 
                     if (!T._ui.container[0].style.top) {
                         T._ui.container.css("top", top);
@@ -159,7 +161,7 @@ export class GameConsole {
 
     writeToLocalStorage(): void {
         const settings: GameSettings = {
-            variables: this.vars.getAll(),
+            variables: this.variables.getAll(),
             aliases: Object.fromEntries(this.aliases),
             binds: this.game.inputManager.binds.getAll()
         };
@@ -179,11 +181,20 @@ export class GameConsole {
             for (const name in config.variables) {
                 const variable = config.variables[name];
 
-                if (defaultClientCVars[name as keyof CVarTypeMapping]) {
-                    this.vars.set.builtIn(name as keyof CVarTypeMapping, variable.value as string, false);
+                const value = typeof variable === "object" ? variable?.value : variable;
+
+                if (name in defaultClientCVars) {
+                    this.variables.set.builtIn(name as keyof CVarTypeMapping, value as string, false);
                 } else {
-                    this.vars.declareCVar(
-                        new ConVar(name, variable.value, this, variable.flags)
+                    const flags = typeof variable === "object" ? variable?.flags : {};
+
+                    this.variables.declareCVar(
+                        new ConVar(name, value, this, {
+                            archive: true,
+                            cheat: false,
+                            readonly: false,
+                            ...flags
+                        })
                     );
                     rewriteToLS = true;
                 }
@@ -203,10 +214,17 @@ export class GameConsole {
             }
         }
 
+        const bindManager = this.game.inputManager.binds;
         for (const command in binds) {
-            for (const bind of binds[command]) {
+            const bindList = binds[command];
+            if (!bindList.length) {
+                bindManager.addInputsToAction(command);
+                continue;
+            }
+
+            for (const bind of bindList) {
                 if (bind === "") continue;
-                this.game.inputManager.binds.addActionsToInput(bind, command);
+                bindManager.addActionsToInput(bind, command);
             }
         }
 
@@ -216,12 +234,12 @@ export class GameConsole {
 
         this.resizeAndMove({
             dimensions: {
-                width: this.getConfig("cv_console_width"),
-                height: this.getConfig("cv_console_height")
+                width: this.getBuiltInCVar("cv_console_width"),
+                height: this.getBuiltInCVar("cv_console_height")
             },
             position: {
-                left: this.getConfig("cv_console_left"),
-                top: this.getConfig("cv_console_top")
+                left: this.getBuiltInCVar("cv_console_left"),
+                top: this.getBuiltInCVar("cv_console_top")
             }
         });
     }
@@ -230,14 +248,24 @@ export class GameConsole {
 
     readonly commands = new Map<string, Command<boolean, Stringable>>();
     readonly aliases = new Map<string, string>();
-    readonly vars = new ConsoleVariables(this);
+    readonly variables = new ConsoleVariables(this);
 
-    getConfig<K extends keyof CVarTypeMapping>(name: K): CVarTypeMapping[K]["value"] {
-        return this.vars.get.builtIn(name).value;
+    /**
+     * Returns the value of a built-in console variable. Sugar method
+     * @param name The name of the console variable whose value is to be retrieved
+     * @returns The value of the console variable with the provided name
+     */
+    getBuiltInCVar<K extends keyof CVarTypeMapping>(name: K): CVarTypeMapping[K]["value"] {
+        return this.variables.get.builtIn(name).value;
     }
 
-    setConfig<K extends keyof CVarTypeMapping>(name: K, value: CVarTypeMapping[K]["value"]): void {
-        this.vars.set.builtIn(name, value);
+    /**
+     * Sets the value of a built-in console variable. Sugar method
+     * @param name The name of the console variable to be modified
+     * @param value The value to give said console variable
+     */
+    setBuiltInCVar<K extends keyof CVarTypeMapping>(name: K, value: CVarTypeMapping[K]["value"]): void {
+        this.variables.set.builtIn(name, value);
     }
 
     constructor(game: Game) {
@@ -245,7 +273,7 @@ export class GameConsole {
 
         this._attachListeners();
 
-        const T = this;
+        /* const T = this;
         // Overrides for native console methods
         {
             const {
@@ -256,7 +284,15 @@ export class GameConsole {
             } = console;
 
             // eslint-disable-next-line no-inner-declarations
-            function makeOverride<C extends typeof window.console, K extends "log" | "info" | "warn" | "error">(nativeKey: K, nativeMethod: C[K], gameConsoleMethod: "log" | "warn" | "error", altMode?: boolean): void {
+            function makeOverride<
+                C extends typeof window.console,
+                K extends "log" | "info" | "warn" | "error"
+            >(
+                nativeKey: K,
+                nativeMethod: C[K],
+                gameConsoleMethod: "log" | "warn" | "error",
+                altMode?: boolean
+            ): void {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (window.console as C)[nativeKey] = function(this: typeof window["console"], ...contents: any[]) {
                     nativeMethod.call(console, ...contents);
@@ -272,7 +308,7 @@ export class GameConsole {
                     ["error", nativeError, "error"]
                 ] as Array<Parameters<typeof makeOverride>>
             ).forEach(args => { makeOverride(...args); });
-        }
+        } */
 
         window.addEventListener("error", err => {
             if (err.filename) {
@@ -508,7 +544,7 @@ export class GameConsole {
                     continue;
                 }
 
-                const cvar = this.vars.get(command.name);
+                const cvar = this.variables.get(command.name);
                 if (cvar) {
                     const result = cvar.setValue(command.args[0]);
 

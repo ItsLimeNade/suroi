@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/indent */
 import { Color } from "pixi.js";
+import { type ColorKeys, MODE } from "../../../../common/src/definitions/modes";
 
 export const UI_DEBUG_MODE = false;
 export const HITBOX_DEBUG_MODE = false;
@@ -14,22 +16,18 @@ export const HITBOX_COLORS = {
     playerWeapon: new Color("lime")
 };
 
-export const COLORS = {
-    grass: new Color("hsl(113, 42%, 42%)"),
-    water: new Color("hsl(211, 63%, 42%)"),
-    border: new Color("hsl(211, 63%, 30%)"),
-    beach: new Color("hsl(40, 39%, 55%)"),
-    riverBank: new Color("hsl(33, 50%, 30%)"),
-    gas: new Color("hsl(17, 100%, 50%)").setAlpha(0.55)
-};
+// Converts the strings in the mode definition to Color objects
+export const COLORS = (Object.keys(MODE.colors) as ColorKeys[])
+    .reduce(
+        (result, key) => {
+            result[key] = new Color(MODE.colors[key]);
+            return result;
+        },
+        // eslint-disable-next-line @typescript-eslint/prefer-reduce-type-parameter, @typescript-eslint/consistent-type-assertions
+        {} as Record<ColorKeys, Color>
+    );
 
-export const BULLET_COLORS: Record<string, number> = {
-    "9mm": 0xffff80,
-    "12g": 0xffc8c8,
-    "556mm": 0x80ff80,
-    "762mm": 0x80ffff,
-    shrapnel: 0x1d1d1d
-};
+export const GHILLIE_TINT = COLORS.grass.multiply(new Color("hsl(0, 0%, 99%)"));
 
 export const PIXI_SCALE = 20;
 

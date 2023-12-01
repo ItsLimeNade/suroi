@@ -1,32 +1,33 @@
 import { Loots, type LootDefinition } from "../../../common/src/definitions/loots";
-import { type ReferenceTo } from "../../../common/src/utils/objectDefinitions";
+import { type ObjectDefinition, type ReferenceTo } from "../../../common/src/utils/objectDefinitions";
 import { weightedRandom } from "../../../common/src/utils/random";
 import { LootTiers, type WeightedItem } from "../data/lootTables";
 import { ColorStyles, styleText } from "./ansiColoring";
 
 export class LootItem {
-    readonly idString: ReferenceTo<LootDefinition>;
-    readonly count: number;
-
-    constructor(idString: ReferenceTo<LootDefinition>, count: number) {
-        this.idString = idString;
-        this.count = count;
-    }
+    constructor(
+        public readonly idString: ReferenceTo<LootDefinition>,
+        public readonly count: number
+    ) {}
 }
 
 export const Logger = {
     log(...message: string[]): void {
-        this._log(message.join(" "));
+        internalLog(message.join(" "));
     },
     warn(...message: string[]): void {
-        this._log(styleText("[WARNING]", ColorStyles.foreground.yellow.normal), message.join(" "));
-    },
-    _log(...message: string[]): void {
-        const date = new Date();
-        const dateString = `[${date.toLocaleDateString("en-US")} ${date.toLocaleTimeString("en-US")}]`;
-        console.log(styleText(dateString, ColorStyles.foreground.green.bright), message.join(" "));
+        internalLog(styleText("[WARNING]", ColorStyles.foreground.yellow.normal), message.join(" "));
     }
 };
+
+function internalLog(...message: string[]): void {
+    const date = new Date();
+
+    console.log(
+        styleText(`[${date.toLocaleDateString("en-US")} ${date.toLocaleTimeString("en-US")}]`, ColorStyles.foreground.green.bright),
+        message.join(" ")
+    );
+}
 
 export function getLootTableLoot(loots: WeightedItem[]): LootItem[] {
     let loot: LootItem[] = [];
@@ -50,20 +51,40 @@ export function getLootTableLoot(loots: WeightedItem[]): LootItem[] {
             loot = loot.concat(getLootTableLoot(LootTiers[selection.tier]));
         } else {
             const item = selection.item;
+            if (item === null) continue;
             loot.push(new LootItem(item, selection.spawnSeparately ? 1 : (selection.count ?? 1)));
 
-            const definition = Loots.getByIDString(item);
+            const definition = Loots.fromString(item);
             if (definition === undefined) {
                 throw new Error(`Unknown loot item: ${item}`);
             }
 
             if ("ammoSpawnAmount" in definition && "ammoType" in definition && definition.ammoSpawnAmount) {
-                loot.push(new LootItem(definition.ammoType, definition.ammoSpawnAmount));
+                if (definition.ammoSpawnAmount > 1) {
+                    loot.push(
+                        new LootItem(definition.ammoType, definition.ammoSpawnAmount / 2),
+                        new LootItem(definition.ammoType, definition.ammoSpawnAmount / 2)
+                    );
+                } else {
+                    loot.push(new LootItem(definition.ammoType, definition.ammoSpawnAmount / 2));
+                }
             }
         }
     }
 
     return loot;
+}
+
+export function getRandomIdString<T extends ObjectDefinition>(table: Record<ReferenceTo<T>, number> | ReferenceTo<T>): ReferenceTo<T> {
+    if (typeof table === "string") return table;
+
+    const items: string[] = [];
+    const weights: number[] = [];
+    for (const item in table) {
+        items.push(item);
+        weights.push(table[item as ReferenceTo<T>]);
+    }
+    return weightedRandom(items, weights);
 }
 
 /**

@@ -1,16 +1,15 @@
-import { clearTimeout } from "timers";
 import { AnimationType, FireMode } from "../../../common/src/constants";
 import { type GunDefinition } from "../../../common/src/definitions/guns";
 import { RectangleHitbox } from "../../../common/src/utils/hitbox";
 import { degreesToRadians, distanceSquared } from "../../../common/src/utils/math";
-import { ItemType } from "../../../common/src/utils/objectDefinitions";
-import { type ReferenceTo } from "../../../common/src/utils/objectDefinitions";
+import { ItemType, type ReferenceTo } from "../../../common/src/utils/objectDefinitions";
 import { randomFloat, randomPointInsideCircle } from "../../../common/src/utils/random";
 import { v, vAdd, vRotate, vSub } from "../../../common/src/utils/vector";
 import { Obstacle } from "../objects/obstacle";
 import { type Player } from "../objects/player";
 import { ReloadAction } from "./action";
 import { InventoryItem } from "./inventoryItem";
+import { type Timeout } from "../../../common/src/utils/misc";
 
 /**
  * A class representing a firearm
@@ -22,13 +21,19 @@ export class GunItem extends InventoryItem<GunDefinition> {
 
     private _shots = 0;
 
-    private _reloadTimeoutID: NodeJS.Timeout | undefined;
+    private _reloadTimeout?: Timeout;
 
-    private _burstTimeoutID: NodeJS.Timeout | undefined;
+    // those need to be nodejs timeouts because some guns fire rate are too close to the tick rate
+    private _burstTimeout?: NodeJS.Timeout;
+    private _autoFireTimeout?: NodeJS.Timeout;
 
-    private _autoFireTimeoutID: NodeJS.Timeout | undefined;
+    cancelAllTimers(): void {
+        this._reloadTimeout?.kill();
+        clearTimeout(this._burstTimeout);
+        clearTimeout(this._autoFireTimeout);
+    }
 
-    cancelReload(): void { clearTimeout(this._reloadTimeoutID); }
+    cancelReload(): void { this._reloadTimeout?.kill(); }
 
     /**
      * Constructs a new gun
@@ -57,7 +62,8 @@ export class GunItem extends InventoryItem<GunDefinition> {
             (!skipAttackCheck && !owner.attacking) ||
             owner.dead ||
             owner.disconnected ||
-            this !== this.owner.activeItem
+            this !== this.owner.activeItem ||
+            (definition.summonAirdrop && owner.isInsideBuilding)
         ) {
             this._shots = 0;
             return;
@@ -74,15 +80,18 @@ export class GunItem extends InventoryItem<GunDefinition> {
         }
 
         this.owner.action?.cancel();
-        clearTimeout(this._burstTimeoutID);
+        clearTimeout(this._burstTimeout);
 
         if (definition.fireMode === FireMode.Burst && this._shots >= definition.burstProperties.shotsPerBurst) {
             this._shots = 0;
-            this._burstTimeoutID = setTimeout(this._useItemNoDelayCheck.bind(this, false), definition.burstProperties.burstCooldown);
+            this._burstTimeout = setTimeout(
+                this._useItemNoDelayCheck.bind(this, false),
+                definition.burstProperties.burstCooldown
+            );
             return;
         }
 
-        owner.animation.type = AnimationType.Gun;
+        owner.animation.type = definition.ballistics.lastShotFX && this.ammo === 1 ? AnimationType.LastShot : AnimationType.Gun;
         owner.animation.seq = !this.owner.animation.seq;
         owner.game.partialDirtyObjects.add(owner);
 
@@ -92,14 +101,13 @@ export class GunItem extends InventoryItem<GunDefinition> {
 
         this._lastUse = owner.game.now;
 
-        const spread = degreesToRadians((definition.shotSpread + (this.owner.isMoving ? definition.moveSpread : 0)) / 2);
+        const spread = degreesToRadians((this.owner.isMoving ? definition.moveSpread : definition.shotSpread) / 2);
         const jitter = definition.jitterRadius ?? 0;
 
         let position = vAdd(
             owner.position,
             vRotate(v(definition.length - jitter, 0), owner.rotation) // player radius + gun length
         );
-        // const rotated = vRotate(v(definition.length - jitter, 0), owner.rotation); // player radius + gun length
 
         for (
             const object of
@@ -157,12 +165,19 @@ export class GunItem extends InventoryItem<GunDefinition> {
         owner.recoil.time = owner.game.now + definition.recoilDuration;
         owner.recoil.multiplier = definition.recoilMultiplier;
 
+        if (definition.summonAirdrop) {
+            owner.game.summonAirdrop(owner.position);
+        }
+
         if (!definition.infiniteAmmo) {
             --this.ammo;
         }
 
         if (this.ammo <= 0) {
-            this._reloadTimeoutID = setTimeout(this.reload.bind(this, true), this.definition.fireDelay);
+            this._reloadTimeout = this.owner.game.addTimeout(
+                this.reload.bind(this, true),
+                this.definition.fireDelay
+            );
             this._shots = 0;
             return;
         }
@@ -171,20 +186,23 @@ export class GunItem extends InventoryItem<GunDefinition> {
             (definition.fireMode !== FireMode.Single || this.owner.isMobile) &&
             this.owner.activeItem === this
         ) {
-            clearTimeout(this._autoFireTimeoutID);
-            this._autoFireTimeoutID = setTimeout(this._useItemNoDelayCheck.bind(this, false), definition.fireDelay);
+            clearTimeout(this._autoFireTimeout);
+            this._autoFireTimeout = setTimeout(
+                this._useItemNoDelayCheck.bind(this, false),
+                definition.fireDelay
+            );
         }
     }
 
     override useItem(): void {
-        let attackCooldown = this.definition.fireDelay;
-        if (this.definition.fireMode === FireMode.Burst) attackCooldown = this.definition.burstProperties.burstCooldown;
-        if (
-            this.owner.game.now - this._lastUse > attackCooldown &&
-            this.owner.game.now - this._switchDate > this.owner.effectiveSwitchDelay
-        ) {
-            this._useItemNoDelayCheck(true);
-        }
+        const def = this.definition;
+
+        super._bufferAttack(
+            def.fireMode === FireMode.Burst
+                ? def.burstProperties.burstCooldown
+                : def.fireDelay,
+            this._useItemNoDelayCheck.bind(this, true)
+        );
     }
 
     reload(skipFireDelayCheck = false): void {

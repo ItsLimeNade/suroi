@@ -1,4 +1,5 @@
-import { TICKS_PER_SECOND } from "../../../common/src/constants";
+import { GameConstants } from "../../../common/src/constants";
+import { Bullets } from "../../../common/src/definitions/bullets";
 import { BaseBullet } from "../../../common/src/utils/baseBullet";
 import { RectangleHitbox } from "../../../common/src/utils/hitbox";
 import { normalizeAngle } from "../../../common/src/utils/math";
@@ -35,8 +36,10 @@ export class Bullet extends BaseBullet {
     readonly sourceGun: Weapon;
     readonly shooter: GameObject;
 
-    clipDistance: number;
+    readonly clipDistance: number;
     reflected = false;
+
+    readonly finalPosition: Vector;
 
     constructor(
         game: Game,
@@ -44,26 +47,30 @@ export class Bullet extends BaseBullet {
         shooter: GameObject,
         options: ServerBulletOptions
     ) {
-        const variance = source.definition.ballistics.rangeVariance;
+        const definition = Bullets.fromString(`${source.definition.idString}_bullet`);
+        const variance = definition.rangeVariance;
+
         super({
             ...options,
             rotation: normalizeAngle(options.rotation),
-            source: source.definition,
+            source: definition,
             sourceID: shooter.id,
             variance: variance ? randomFloat(0, variance) : undefined
         });
 
-        this.clipDistance = options.clipDistance ?? this.definition.maxDistance;
+        this.clipDistance = options.clipDistance ?? this.definition.range;
         this.game = game;
         this.sourceGun = source;
         this.shooter = shooter;
+
+        this.finalPosition = vAdd(this.position, vMul(this.direction, this.maxDistance));
     }
 
     update(): DamageRecord[] {
-        const lineRect = RectangleHitbox.fromLine(this.position, vAdd(this.position, vMul(this.velocity, TICKS_PER_SECOND)));
+        const lineRect = RectangleHitbox.fromLine(this.position, vAdd(this.position, vMul(this.velocity, GameConstants.tps)));
 
         const objects = this.game.grid.intersectsHitbox(lineRect);
-        const collisions = this.updateAndGetCollisions(TICKS_PER_SECOND, objects);
+        const collisions = this.updateAndGetCollisions(GameConstants.tps, objects);
 
         // Bullets from dead players should not deal damage so delete them
         // Also delete bullets out of map bounds

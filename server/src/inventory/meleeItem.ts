@@ -14,7 +14,7 @@ import { InventoryItem } from "./inventoryItem";
 export class MeleeItem extends InventoryItem<MeleeDefinition> {
     declare readonly category: ItemType.Melee;
 
-    private _autoUseTimeoutID: NodeJS.Timeout | undefined;
+    private _autoUseTimeoutID?: NodeJS.Timeout;
 
     /**
      * Constructs a new melee weapon
@@ -46,7 +46,7 @@ export class MeleeItem extends InventoryItem<MeleeDefinition> {
 
         owner.action?.cancel();
 
-        setTimeout((): void => {
+        this.owner.game.addTimeout((): void => {
             if (
                 this.owner.activeItem === this &&
                 (owner.attacking || skipAttackCheck) &&
@@ -89,19 +89,27 @@ export class MeleeItem extends InventoryItem<MeleeDefinition> {
                     }
 
                     closestObject.damage(definition.damage * multiplier, owner, this);
+
+                    if (closestObject instanceof Obstacle && !closestObject.dead) {
+                        closestObject.interact(this.owner);
+                    }
                 }
 
                 if (definition.fireMode === FireMode.Auto || owner.isMobile) {
                     clearTimeout(this._autoUseTimeoutID);
-                    this._autoUseTimeoutID = setTimeout(this._useItemNoDelayCheck.bind(this, false), definition.cooldown);
+                    this._autoUseTimeoutID = setTimeout(
+                        this._useItemNoDelayCheck.bind(this, false),
+                        definition.cooldown
+                    );
                 }
             }
         }, 50);
     }
 
     override useItem(): void {
-        if (this.owner.game.now - this._lastUse > this.definition.cooldown) {
-            this._useItemNoDelayCheck(true);
-        }
+        super._bufferAttack(
+            this.definition.cooldown,
+            this._useItemNoDelayCheck.bind(this, true)
+        );
     }
 }

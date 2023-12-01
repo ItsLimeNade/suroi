@@ -1,25 +1,27 @@
 import { PlayerActions } from "../../../common/src/constants";
-import { HealType, HealingItems, type HealingItemDefinition } from "../../../common/src/definitions/healingItems";
-import { type ReferenceTo, reifyDefinition } from "../../../common/src/utils/objectDefinitions";
+import { HealType, type HealingItemDefinition } from "../../../common/src/definitions/healingItems";
+import { Loots } from "../../../common/src/definitions/loots";
+import { type Timeout } from "../../../common/src/utils/misc";
+import { type ReifiableDef } from "../../../common/src/utils/objectDefinitions";
 import { type Player } from "../objects/player";
 import { type GunItem } from "./gunItem";
 
 export abstract class Action {
     readonly player: Player;
-    private readonly _timeoutId: ReturnType<typeof setTimeout>;
+    private readonly _timeout: Timeout;
     abstract get type(): PlayerActions;
     readonly speedMultiplier = 1 as number;
 
     protected constructor(player: Player, time: number) {
         this.player = player;
-        this._timeoutId = setTimeout(this.execute.bind(this), time * 1000);
+        this._timeout = player.game.addTimeout(this.execute.bind(this), time * 1000);
         this.player.actionSeq++;
         this.player.actionSeq %= 4;
         this.player.game.fullDirtyObjects.add(this.player);
     }
 
     cancel(): void {
-        clearTimeout(this._timeoutId);
+        this._timeout.kill();
         this.player.action = undefined;
         this.player.actionSeq++;
         this.player.actionSeq %= 4;
@@ -57,7 +59,7 @@ export class ReloadAction extends Action {
         if (definition.singleReload) this.item.reload();
         this.player.attacking = false;
         this.player.dirty.weapons = true;
-        this.player.dirty.inventory = true;
+        this.player.dirty.items = true;
     }
 }
 
@@ -68,10 +70,10 @@ export class HealingAction extends Action {
     readonly item: HealingItemDefinition;
     override readonly speedMultiplier = 0.5;
 
-    constructor(player: Player, item: ReferenceTo<HealingItemDefinition> | HealingItemDefinition) {
-        const itemDef = item = reifyDefinition(item, HealingItems);
+    constructor(player: Player, item: ReifiableDef<HealingItemDefinition>) {
+        const itemDef = Loots.reify<HealingItemDefinition>(item);
         super(player, itemDef.useTime);
-        this.item = item;
+        this.item = itemDef;
     }
 
     execute(): void {
@@ -87,6 +89,6 @@ export class HealingAction extends Action {
                 this.player.adrenaline += this.item.restoreAmount;
                 break;
         }
-        this.player.dirty.inventory = true;
+        this.player.dirty.items = true;
     }
 }

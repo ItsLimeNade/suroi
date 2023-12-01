@@ -1,24 +1,57 @@
 import { type ExplosionDefinition } from "../definitions/explosions";
+import { type SuroiBitStream } from "./suroiBitStream";
 
 /**
- * A class representing the definitions for some object type
+ * A class representing a list of definitions
  * @template T The specific type of `ObjectDefinition` this class holds
  */
 export class ObjectDefinitions<T extends ObjectDefinition = ObjectDefinition> {
     readonly bitCount: number;
-    readonly definitions: T[] = [];
+    readonly definitions: T[];
     readonly idStringToNumber: Record<string, number> = {};
 
     constructor(definitions: T[]) {
         this.bitCount = Math.ceil(Math.log2(definitions.length));
 
-        for (let i = 0, l = definitions.length; i < l; i++) {
-            this.idStringToNumber[(this.definitions[i] = definitions[i]).idString] = i;
+        this.definitions = definitions;
+
+        for (let i = 0; i < definitions.length; i++) {
+            const idString = definitions[i].idString;
+            if (this.idStringToNumber[idString] !== undefined) {
+                throw new Error(`Duplicated idString: ${idString}`);
+            }
+            this.idStringToNumber[idString] = i;
         }
     }
 
-    getByIDString<U extends T = T>(id: ReferenceTo<T>): U {
-        return this.definitions[this.idStringToNumber[id]] as U;
+    reify<U extends T = T>(type: ReifiableDef<T>): U {
+        return (typeof type === "string"
+            ? this.fromString(type)
+            : type) as U;
+    }
+
+    fromString<U extends T = T>(idString: ReferenceTo<U>): U {
+        const id = this.idStringToNumber[idString];
+        if (id === undefined) throw new Error(`Unknown idString: ${idString}`);
+        return this.definitions[id] as U;
+    }
+
+    writeToStream(stream: SuroiBitStream, type: ReifiableDef<T>): void {
+        stream.writeBits(this.idStringToNumber[
+            typeof type === "string" ? type : type.idString
+        ], this.bitCount);
+    }
+
+    readFromStream<U extends T = T>(stream: SuroiBitStream): U {
+        const id = stream.readBits(this.bitCount);
+        if (id >= this.definitions.length) {
+            console.warn(`Id out of range: ${id}, Max: ${this.definitions.length - 1}`);
+        }
+        return this.definitions[id] as U;
+    }
+
+    [Symbol.iterator](): Iterator<T> {
+        return this.definitions[Symbol.iterator]();
     }
 }
 
@@ -32,19 +65,11 @@ export interface ObjectDefinition {
  */
 export type ReferenceTo<T extends ObjectDefinition = ObjectDefinition> = T["idString"];
 
-export function reifyDefinition<T extends ObjectDefinition, U extends T = T>(definition: U | ReferenceTo<U>, collection: ObjectDefinitions<T> | T[]): U {
-    if (typeof definition !== "string") return definition;
-    else if (Array.isArray(collection)) return collection.find(def => def.idString === definition) as U;
-    else return collection.getByIDString<U>(definition);
-    /*switch (true) {
-        case typeof definition !== "string": return definition;
-        case Array.isArray(collection): return collection.find(def => def.idString === definition) as U;
-        default: return collection.getByIDString<U>(definition);
-    }*/
-}
+export type ReifiableDef<T extends ObjectDefinition> = ReferenceTo<T> | T;
 
 // expand this as needed
 export enum ItemType {
+    None,
     Gun,
     Ammo,
     Melee,
@@ -62,7 +87,19 @@ export enum ObstacleSpecialRoles {
     Activatable
 }
 
+export enum MapObjectSpawnMode {
+    Grass,
+    /**
+     * Grass, beach and river banks.
+     */
+    GrassAndSand,
+    RiverBank,
+    River,
+    Beach
+}
+
 export const LootRadius: Record<ItemType, number> = {
+    [ItemType.None]: 1,
     [ItemType.Gun]: 3.4,
     [ItemType.Ammo]: 2,
     [ItemType.Melee]: 3,
@@ -73,11 +110,11 @@ export const LootRadius: Record<ItemType, number> = {
     [ItemType.Skin]: 3
 };
 
-export interface BulletDefinition {
+export interface BaseBulletDefinition {
     readonly damage: number
     readonly obstacleMultiplier: number
     readonly speed: number
-    readonly maxDistance: number
+    readonly range: number
     readonly penetration?: {
         readonly players?: boolean
         readonly obstacles?: boolean
@@ -95,6 +132,7 @@ export interface BulletDefinition {
     readonly shrapnel?: boolean
     readonly onHitExplosion?: ReferenceTo<ExplosionDefinition>
     readonly goToMouse?: boolean
+    readonly lastShotFX?: boolean
 }
 
 export interface WearerAttributes {

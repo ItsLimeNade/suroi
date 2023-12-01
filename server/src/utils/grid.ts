@@ -1,11 +1,11 @@
-import { type Hitbox } from "../../../common/src/utils/hitbox";
+import { type RectangleHitbox, type Hitbox } from "../../../common/src/utils/hitbox";
 import { clamp } from "../../../common/src/utils/math";
 import { type Vector, v } from "../../../common/src/utils/vector";
 
 interface GameObject {
-    id: number
-    hitbox?: Hitbox
-    position: Vector
+    readonly id: number
+    readonly hitbox?: Hitbox
+    readonly position: Vector
 }
 
 /**
@@ -16,8 +16,9 @@ export class Grid<T extends GameObject> {
     readonly height: number;
     readonly cellSize = 32;
 
-    //              X     Y         Object ID
-    readonly _grid: Array<Array<Map<number, T>>>;
+    //                        X     Y     Object ID
+    //                      __^__ __^__     ___^__
+    private readonly _grid: Array<Array<Map<number, T>>>;
 
     // store the cells each game object is occupying
     // so removing the object from the grid is faster
@@ -29,7 +30,7 @@ export class Grid<T extends GameObject> {
 
         // fill the grid X row with arrays for the Y column
         // maps are created on demand to save memory usage
-        this._grid = Array.from({ length: width }, () => []);
+        this._grid = Array.from({ length: this.width + 1 }, () => []);
     }
 
     /**
@@ -42,29 +43,40 @@ export class Grid<T extends GameObject> {
 
         if (object.hitbox === undefined) {
             const pos = this._roundToCells(object.position);
-            const xRow = this._grid[pos.x];
-            if (xRow[pos.y] === undefined) xRow[pos.y] = new Map();
-            xRow[pos.y].set(object.id, object);
+            (this._grid[pos.x][pos.y] ??= new Map()).set(object.id, object);
             cells.push(pos);
         } else {
-            // get the bounds of the hitbox
-            const rect = object.hitbox.toRectangle();
-            // round it to the grid cells
+            let rect: RectangleHitbox;
+            if ("spawnHitbox" in object) {
+                rect = (object.spawnHitbox as Hitbox).toRectangle();
+            } else {
+                rect = object.hitbox.toRectangle();
+            }
+
+            // Get the bounds of the hitbox
+            // Round it to the grid cells
             const min = this._roundToCells(rect.min);
             const max = this._roundToCells(rect.max);
 
-            // add it to all grid cells that it intersects
-            for (let x = min.x; x <= max.x; x++) {
+            // Add it to all grid cells that it intersects
+            for (
+                let x = min.x, maxX = max.x;
+                x <= maxX;
+                x++
+            ) {
                 const xRow = this._grid[x];
-                for (let y = min.y; y <= max.y; y++) {
-                    if (xRow[y] === undefined) xRow[y] = new Map();
-
-                    xRow[y].set(object.id, object);
+                for (
+                    let y = min.y, maxY = max.y;
+                    y <= maxY;
+                    y++
+                ) {
+                    (xRow[y] ??= new Map()).set(object.id, object);
                     cells.push(v(x, y));
                 }
             }
         }
-        // store the cells this object is occupying
+
+        // Store the cells this object is occupying
         this._objectsCells.set(object.id, cells);
     }
 
@@ -96,17 +108,26 @@ export class Grid<T extends GameObject> {
 
         const objects = new Set<T>();
 
-        for (let x = min.x; x <= max.x; x++) {
+        for (
+            let x = min.x, maxX = max.x;
+            x <= maxX;
+            x++
+        ) {
             const xRow = this._grid[x];
-            for (let y = min.y; y <= max.y; y++) {
+            for (
+                let y = min.y, maxY = max.y;
+                y <= maxY;
+                y++
+            ) {
                 const objectsMap = xRow[y];
-                if (objectsMap) {
-                    for (const object of xRow[y].values()) {
-                        objects.add(object);
-                    }
+                if (!objectsMap) continue;
+
+                for (const object of objectsMap.values()) {
+                    objects.add(object);
                 }
             }
         }
+
         return objects;
     }
 
